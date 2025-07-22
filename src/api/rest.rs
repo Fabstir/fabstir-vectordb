@@ -201,7 +201,7 @@ impl IntoResponse for ErrorResponse {
     }
 }
 
-pub async fn create_app(config: ApiConfig) -> Result<Router, Box<dyn std::error::Error>> {
+pub async fn create_app(config: ApiConfig) -> Result<Router, anyhow::Error> {
     // Initialize HybridIndex with default config
     let hybrid_config = HybridConfig::default();
     let hybrid_index = Arc::new(HybridIndex::new(hybrid_config));
