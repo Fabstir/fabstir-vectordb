@@ -316,6 +316,43 @@ impl HybridIndex {
         })
     }
     
+    pub async fn migrate_specific_vectors(&self, vector_ids: &[VectorId]) -> Result<MigrationResult, HybridError> {
+        let mut migrated_count = 0;
+        
+        // Process in batches
+        for batch in vector_ids.chunks(self.config.migration_batch_size) {
+            let recent = self.recent_index.write().await;
+            let mut historical = self.historical_index.write().await;
+            
+            for id in batch {
+                // Get vector from recent index
+                if let Some(node) = recent.get_node(id) {
+                    let vector = node.vector().clone();
+                    
+                    // Insert into historical
+                    if historical.insert(id.clone(), vector).is_ok() {
+                        // Remove from recent
+                        // Note: HNSW doesn't have remove, so we'd need to track deleted nodes
+                        migrated_count += 1;
+                    }
+                }
+            }
+        }
+        
+        // Update counts
+        if migrated_count > 0 {
+            let mut recent_count = self.recent_count.write().await;
+            *recent_count = recent_count.saturating_sub(migrated_count);
+            
+            let mut historical_count = self.historical_count.write().await;
+            *historical_count += migrated_count;
+        }
+        
+        Ok(MigrationResult {
+            vectors_migrated: migrated_count,
+        })
+    }
+    
     pub async fn migrate_with_threshold(&self, threshold: Duration) -> Result<usize, HybridError> {
         let now = Utc::now();
         let mut migrated_count = 0;

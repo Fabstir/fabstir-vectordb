@@ -1,5 +1,6 @@
 pub mod core;
 pub mod search_integration;
+pub mod maintenance;
 
 pub use core::{
     HybridConfig,
