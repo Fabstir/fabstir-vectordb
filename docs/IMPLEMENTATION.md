@@ -134,11 +134,11 @@ Foundation types, S5 integration, and vector operations.
   - [x] Relevance scoring
   - [x] Query optimisation
 
-- [ ] **4.3 Maintenance Operations**
-  - [ ] Automated migration tasks
-  - [ ] Index health monitoring
-  - [ ] Garbage collection
-  - [ ] Backup strategies
+- [x] **4.3 Maintenance Operations**
+  - [x] Automated migration tasks
+  - [x] Index health monitoring
+  - [x] Garbage collection
+  - [x] Backup strategies
 
 ### Phase 5: API & Integration (Week 5)
 
