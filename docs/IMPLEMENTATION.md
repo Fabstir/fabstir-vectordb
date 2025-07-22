@@ -11,8 +11,8 @@ Decentralised AI vector database built on S5 storage with hybrid HNSW/IVF indexi
 
 - ✅ Phase 1: Core Infrastructure (100%) - Completed 2025-07-22
 - 🔧 Phase 2: HNSW Index (82%) - In Progress
-- 🔧 Phase 3: IVF Index (66%) - In Progress
-- ⏳ Phase 4: Hybrid Time-Based Index (0%)
+- ✅ Phase 3: IVF Index (100%) - Completed 2025-07-22
+- 🔧 Phase 4: Hybrid Time-Based Index (25%) - In Progress
 - ⏳ Phase 5: API & Integration (0%)
 - ⏳ Phase 6: Performance & Optimisation (0%)
 
@@ -120,12 +120,12 @@ Foundation types, S5 integration, and vector operations.
 
 ### Phase 4: Hybrid Time-Based Index (Week 4)
 
-- [ ] **4.1 Hybrid Index Structure**
+- [x] **4.1 Hybrid Index Structure** ✅ 2025-07-22
 
-  - [ ] Define index routing logic
-  - [ ] Implement age-based partitioning
-  - [ ] Create migration scheduler
-  - [ ] Add configuration system
+  - [x] Define index routing logic
+  - [x] Implement age-based partitioning
+  - [x] Create migration scheduler
+  - [x] Add configuration system
 
 - [ ] **4.2 Search Integration**
 
@@ -290,4 +290,21 @@ Each phase follows TDD with:
   - Dynamic index adaptation through retraining
   - Comprehensive monitoring and statistics
   - Maintenance operations for production use
+
+**Phase 4.1 Hybrid Index Structure (100% complete)**
+- Implemented HybridConfig with recent_threshold and sub-index configurations
+- Created HybridIndex combining HNSW (recent) and IVF (historical) indices
+- Implemented TimestampedVector for tracking vector age
+- Added automatic routing based on vector age during insertion
+- Implemented combined search across both indices with result merging
+- Created migration logic to move vectors from HNSW to IVF based on age
+- Added comprehensive statistics tracking (HybridStats, AgeDistribution)
+- Implemented manual and auto-migration capabilities
+- All 17 tests passing (hybrid structure: 3/3, insertion: 4/4, search: 5/5, migration: 3/3, statistics: 2/2)
+- Key features:
+  - Automatic age-based routing during insertion
+  - Seamless search across both indices
+  - Configurable migration thresholds
+  - Memory and performance tracking
+  - Thread-safe async implementation
 ```
