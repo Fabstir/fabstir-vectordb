@@ -9,7 +9,7 @@ Decentralised AI vector database built on S5 storage with hybrid HNSW/IVF indexi
 
 ## Current Status
 
-- ⏳ Phase 1: Core Infrastructure (0%)
+- ✅ Phase 1: Core Infrastructure (100%) - Completed 2025-07-22
 - ⏳ Phase 2: HNSW Index (0%)
 - ⏳ Phase 3: IVF Index (0%)
 - ⏳ Phase 4: Hybrid Time-Based Index (0%)
@@ -45,11 +45,15 @@ Foundation types, S5 integration, and vector operations.
   - [x] Implement batch operations
   - [x] Add retry logic
 
-- [ ] **1.4 Vector Operations**
-  - [ ] Implement similarity calculations
-  - [ ] Add SIMD optimisations
-  - [ ] Create SearchResult type
-  - [ ] Implement result merging utilities
+- [x] **1.4 Vector Operations** ✅ 2025-07-22
+  - [x] Implement similarity calculations
+  - [x] Add SIMD optimisations
+  - [x] Create SearchResult type
+  - [x] Implement result merging utilities
+  - [x] Heap-based top-k selection
+  - [x] Parallel computation functions
+  - [x] Scalar and product quantization
+  - [x] Distance correction functions
 
 ### Phase 2: HNSW Index Implementation (Week 2)
 

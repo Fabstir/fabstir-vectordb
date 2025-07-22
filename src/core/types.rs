@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct VectorId([u8; 32]);
 
 impl VectorId {
@@ -148,6 +148,14 @@ pub struct SearchResult {
 }
 
 impl SearchResult {
+    pub fn new(vector_id: VectorId, distance: f32, metadata: Option<VideoMetadata>) -> Self {
+        SearchResult {
+            vector_id,
+            distance,
+            metadata,
+        }
+    }
+
     pub fn deduplicate(mut results: Vec<SearchResult>) -> Vec<SearchResult> {
         use std::collections::HashMap;
         
