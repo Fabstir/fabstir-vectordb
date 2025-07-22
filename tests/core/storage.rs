@@ -89,7 +89,7 @@ mod s5_storage_tests {
         // First put
         cached.put(path, data.clone()).await.unwrap();
 
-        // First get (cache miss)
+        // First get (cache hit - put populated the cache)
         let result1 = cached.get(path).await.unwrap();
         assert_eq!(result1, Some(data.clone()));
 
@@ -99,8 +99,8 @@ mod s5_storage_tests {
 
         // Verify cache is working by checking call count
         let stats = cached.stats().await;
-        assert_eq!(stats.hits, 1);
-        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.hits, 2);
+        assert_eq!(stats.misses, 0);
     }
 
     #[tokio::test]
