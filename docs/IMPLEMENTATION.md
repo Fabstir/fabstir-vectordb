@@ -11,7 +11,7 @@ Decentralised AI vector database built on S5 storage with hybrid HNSW/IVF indexi
 
 - ✅ Phase 1: Core Infrastructure (100%) - Completed 2025-07-22
 - 🔧 Phase 2: HNSW Index (82%) - In Progress
-- ⏳ Phase 3: IVF Index (0%)
+- 🔧 Phase 3: IVF Index (33%) - In Progress
 - ⏳ Phase 4: Hybrid Time-Based Index (0%)
 - ⏳ Phase 5: API & Integration (0%)
 - ⏳ Phase 6: Performance & Optimisation (0%)
@@ -98,12 +98,12 @@ Foundation types, S5 integration, and vector operations.
 
 ### Phase 3: IVF Index Implementation (Week 3)
 
-- [ ] **3.1 IVF Core Structure**
+- [x] **3.1 IVF Core Structure** ✅ 2025-07-22
 
-  - [ ] Implement k-means clustering
-  - [ ] Define centroid storage
-  - [ ] Create inverted lists
-  - [ ] Add cluster assignment logic
+  - [x] Implement k-means clustering
+  - [x] Define centroid storage
+  - [x] Create inverted lists
+  - [x] Add cluster assignment logic
 
 - [ ] **3.2 IVF Persistence**
 
@@ -239,4 +239,18 @@ Each phase follows TDD with:
 - Implemented placeholder maintenance operations (optimize, rebalance, compact)
 - Most tests passing (batch: 4/4, deletion: 4/4, maintenance: varies)
 - Performance issues from Phase 2.1 still affecting tests with >10 nodes
+
+**Phase 3.1 IVF Core Structure (100% complete)**
+- Implemented IVFConfig with validation
+- Created ClusterId and Centroid types
+- Implemented IVFIndex with k-means++ initialization
+- Added k-means training with early convergence detection
+- Implemented insert operation with cluster assignment
+- Created search with configurable multi-probe
+- All 20 tests passing
+- Core features:
+  - K-means clustering with smart initialization
+  - Inverted lists for efficient storage
+  - Multi-probe search for accuracy/speed tradeoff
+  - Comprehensive error handling
 ```
