@@ -6,7 +6,7 @@ use rand::rngs::StdRng;
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum IVFError {
     #[error("Index not trained. Call train() before inserting or searching.")]
     NotTrained,
@@ -103,7 +103,7 @@ pub struct InvertedList {
 }
 
 impl InvertedList {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             vectors: HashMap::new(),
         }
@@ -123,13 +123,13 @@ impl InvertedList {
 }
 
 pub struct IVFIndex {
-    config: IVFConfig,
-    centroids: Vec<Centroid>,
-    inverted_lists: HashMap<ClusterId, InvertedList>,
-    dimension: Option<usize>,
-    trained: bool,
-    rng: StdRng,
-    total_vectors: usize,
+    pub(crate) config: IVFConfig,
+    pub(crate) centroids: Vec<Centroid>,
+    pub(crate) inverted_lists: HashMap<ClusterId, InvertedList>,
+    pub(crate) dimension: Option<usize>,
+    pub(crate) trained: bool,
+    pub(crate) rng: StdRng,
+    pub(crate) total_vectors: usize,
 }
 
 impl IVFIndex {
@@ -303,7 +303,7 @@ impl IVFIndex {
         Ok(centroids)
     }
     
-    fn find_nearest_centroid(&self, vector: &[f32]) -> ClusterId {
+    pub(crate) fn find_nearest_centroid(&self, vector: &[f32]) -> ClusterId {
         let mut best_id = ClusterId(0);
         let mut best_dist = f32::INFINITY;
         
