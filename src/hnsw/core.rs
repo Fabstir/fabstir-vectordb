@@ -7,7 +7,7 @@ use rand::rngs::StdRng;
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum HNSWError {
     #[error("Vector with ID {0:?} already exists")]
     DuplicateVector(VectorId),
@@ -44,6 +44,8 @@ pub struct HNSWNode {
     vector: Vec<f32>,
     level: usize,
     neighbors: Vec<HashSet<VectorId>>, // neighbors[i] = neighbors at layer i
+    #[serde(default)]
+    is_deleted: bool,
 }
 
 impl HNSWNode {
@@ -53,6 +55,7 @@ impl HNSWNode {
             vector,
             level: 0,
             neighbors: vec![HashSet::new()],
+            is_deleted: false,
         }
     }
     
@@ -96,6 +99,14 @@ impl HNSWNode {
     pub fn from_cbor(data: &[u8]) -> Result<Self, String> {
         serde_cbor::from_slice(data)
             .map_err(|e| e.to_string())
+    }
+    
+    pub fn is_deleted(&self) -> bool {
+        self.is_deleted
+    }
+    
+    pub fn mark_deleted(&mut self) {
+        self.is_deleted = true;
     }
 }
 
@@ -373,6 +384,11 @@ impl HNSWIndex {
                             visited.insert(neighbor_id.clone());
                             
                             if let Some(neighbor) = nodes.get(neighbor_id) {
+                                // Skip deleted nodes
+                                if neighbor.is_deleted() {
+                                    continue;
+                                }
+                                
                                 let distance = euclidean_distance(query, &neighbor.vector);
                                 
                                 if distance < -nearest.peek().unwrap().distance || nearest.len() < ef {
@@ -464,6 +480,10 @@ impl HNSWIndex {
     
     pub fn dimension(&self) -> Option<usize> {
         *self.dimension.read().unwrap()
+    }
+    
+    pub fn nodes(&self) -> &Arc<RwLock<HashMap<VectorId, HNSWNode>>> {
+        &self.nodes
     }
 }
 
