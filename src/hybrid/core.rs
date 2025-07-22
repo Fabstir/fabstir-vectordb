@@ -1,30 +1,30 @@
-use crate::core::types::{VectorId, SearchResult};
 use crate::core::storage::S5Storage;
-use crate::hnsw::core::{HNSWIndex, HNSWConfig};
-use crate::ivf::core::{IVFIndex, IVFConfig, ClusterId};
-use std::time::{Duration, SystemTime};
+use crate::core::types::{SearchResult, VectorId};
+use crate::hnsw::core::{HNSWConfig, HNSWIndex};
+use crate::ivf::core::{ClusterId, IVFConfig, IVFIndex};
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Error)]
 pub enum HybridError {
     #[error("HNSW error: {0}")]
     HNSW(String),
-    
+
     #[error("IVF error: {0}")]
     IVF(String),
-    
+
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
-    
+
     #[error("Index not initialized")]
     NotInitialized,
-    
+
     #[error("Dimension mismatch: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
-    
+
     #[error("Vector with ID {0:?} already exists")]
     DuplicateVector(VectorId),
 }
@@ -44,7 +44,7 @@ impl Default for HybridConfig {
         ivf_config.train_size = 9; // Smaller for tests
         ivf_config.n_clusters = 3; // Fewer clusters for tests
         ivf_config.n_probe = 2; // Must be <= n_clusters
-        
+
         Self {
             recent_threshold: Duration::from_secs(7 * 24 * 3600), // 7 days
             hnsw_config: HNSWConfig::default(),
@@ -57,8 +57,7 @@ impl Default for HybridConfig {
 
 impl HybridConfig {
     pub fn is_valid(&self) -> bool {
-        self.recent_threshold.as_secs() > 0 &&
-        self.migration_batch_size > 0
+        self.recent_threshold.as_secs() > 0 && self.migration_batch_size > 0
     }
 }
 
@@ -77,19 +76,19 @@ impl TimestampedVector {
             timestamp: timestamp.into(),
         }
     }
-    
+
     pub fn id(&self) -> &VectorId {
         &self.id
     }
-    
+
     pub fn vector(&self) -> &Vec<f32> {
         &self.vector
     }
-    
+
     pub fn timestamp(&self) -> SystemTime {
         self.timestamp
     }
-    
+
     pub fn is_recent(&self, threshold: Duration) -> bool {
         if let Ok(elapsed) = self.timestamp.elapsed() {
             elapsed < threshold
@@ -171,7 +170,7 @@ impl HybridIndex {
     pub fn new(config: HybridConfig) -> Self {
         let recent_index = Arc::new(RwLock::new(HNSWIndex::new(config.hnsw_config.clone())));
         let historical_index = Arc::new(RwLock::new(IVFIndex::new(config.ivf_config.clone())));
-        
+
         Self {
             config,
             recent_index,
@@ -182,102 +181,127 @@ impl HybridIndex {
             historical_count: Arc::new(RwLock::new(0)),
         }
     }
-    
+
     pub async fn with_storage(_storage: Arc<dyn S5Storage>) -> Self {
         Self::new(HybridConfig::default())
     }
-    
+
     pub async fn initialize(&mut self, training_data: Vec<Vec<f32>>) -> Result<(), HybridError> {
         // Train the IVF index
         let mut historical = self.historical_index.write().await;
-        historical.train(&training_data)
+        historical
+            .train(&training_data)
             .map_err(|e| HybridError::IVF(e.to_string()))?;
-        
+
         // Clear any training data that was inserted
         historical.inverted_lists.clear();
         historical.total_vectors = 0;
         for i in 0..historical.config.n_clusters {
-            historical.inverted_lists.insert(ClusterId(i), crate::ivf::core::InvertedList::new());
+            historical
+                .inverted_lists
+                .insert(ClusterId(i), crate::ivf::core::InvertedList::new());
         }
         drop(historical);
-        
+
         self.initialized = true;
         Ok(())
     }
-    
+
     pub fn config(&self) -> &HybridConfig {
         &self.config
     }
-    
+
     pub async fn insert(&self, id: VectorId, vector: Vec<f32>) -> Result<(), HybridError> {
         self.insert_with_timestamp(id, vector, Utc::now()).await
     }
-    
-    pub async fn insert_with_timestamp(&self, id: VectorId, vector: Vec<f32>, timestamp: DateTime<Utc>) -> Result<(), HybridError> {
+
+    pub async fn insert_with_timestamp(
+        &self,
+        id: VectorId,
+        vector: Vec<f32>,
+        timestamp: DateTime<Utc>,
+    ) -> Result<(), HybridError> {
         if !self.initialized {
             return Err(HybridError::NotInitialized);
         }
-        
+
         // Check for duplicates
         let timestamps = self.timestamps.read().await;
         if timestamps.contains_key(&id) {
             return Err(HybridError::DuplicateVector(id));
         }
         drop(timestamps);
-        
+
         // Determine if vector is recent or historical
         let now = Utc::now();
-        let age = now.signed_duration_since(timestamp).to_std().unwrap_or(Duration::from_secs(0));
-        
+        let age = now
+            .signed_duration_since(timestamp)
+            .to_std()
+            .unwrap_or(Duration::from_secs(0));
+
         if age < self.config.recent_threshold {
             // Insert into HNSW (recent)
             let mut recent = self.recent_index.write().await;
-            recent.insert(id.clone(), vector)
+            recent
+                .insert(id.clone(), vector)
                 .map_err(|e| HybridError::HNSW(e.to_string()))?;
-            
+
             let mut count = self.recent_count.write().await;
             *count += 1;
         } else {
             // Insert into IVF (historical)
             let mut historical = self.historical_index.write().await;
-            historical.insert(id.clone(), vector)
+            historical
+                .insert(id.clone(), vector)
                 .map_err(|e| HybridError::IVF(e.to_string()))?;
-            
+
             let mut count = self.historical_count.write().await;
             *count += 1;
         }
-        
+
         // Store timestamp
         let mut timestamps = self.timestamps.write().await;
         timestamps.insert(id, timestamp);
-        
+
         Ok(())
     }
-    
+
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>, HybridError> {
         let mut config = SearchConfig::default();
         config.k = k;
         self.search_with_config(query, config).await
     }
-    
-    pub async fn search_with_config(&self, query: &[f32], config: SearchConfig) -> Result<Vec<SearchResult>, HybridError> {
+
+    pub async fn search_with_config(
+        &self,
+        query: &[f32],
+        config: SearchConfig,
+    ) -> Result<Vec<SearchResult>, HybridError> {
         let k = config.k;
         if !self.initialized {
             // Return empty results for uninitialized index
             return Ok(Vec::new());
         }
-        
+
         // Auto-migrate if enabled
         if self.config.auto_migrate {
             self.migrate_old_vectors().await?;
         }
-        
+
         let mut all_results = Vec::new();
-        
+
         // Determine k values for each index
-        let recent_k = if config.recent_k > 0 { config.recent_k } else { k };
-        let historical_k = if config.historical_k > 0 { config.historical_k } else { k };
-        
+        let recent_k = if config.recent_k > 0 {
+            config.recent_k
+        } else {
+            k
+        };
+        let historical_k = if config.historical_k > 0 {
+            config.historical_k
+        } else {
+            k
+        };
+
         // Search recent vectors
         if config.search_recent {
             let recent = self.recent_index.read().await;
@@ -286,13 +310,15 @@ impl HybridIndex {
                 all_results.extend(recent_results);
             }
         }
-        
+
         // Search historical vectors
         if config.search_historical {
             let historical = self.historical_index.read().await;
             // Use custom n_probe if specified
             if config.ivf_n_probe != historical.config().n_probe {
-                if let Ok(historical_results) = historical.search_with_config(query, historical_k, config.ivf_n_probe) {
+                if let Ok(historical_results) =
+                    historical.search_with_config(query, historical_k, config.ivf_n_probe)
+                {
                     all_results.extend(historical_results);
                 }
             } else {
@@ -301,34 +327,39 @@ impl HybridIndex {
                 }
             }
         }
-        
+
         // Sort by distance and take top k
         all_results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
         all_results.truncate(k);
-        
+
         Ok(all_results)
     }
-    
+
     pub async fn migrate_old_vectors(&self) -> Result<MigrationResult, HybridError> {
-        let count = self.migrate_with_threshold(self.config.recent_threshold).await?;
+        let count = self
+            .migrate_with_threshold(self.config.recent_threshold)
+            .await?;
         Ok(MigrationResult {
             vectors_migrated: count,
         })
     }
-    
-    pub async fn migrate_specific_vectors(&self, vector_ids: &[VectorId]) -> Result<MigrationResult, HybridError> {
+
+    pub async fn migrate_specific_vectors(
+        &self,
+        vector_ids: &[VectorId],
+    ) -> Result<MigrationResult, HybridError> {
         let mut migrated_count = 0;
-        
+
         // Process in batches
         for batch in vector_ids.chunks(self.config.migration_batch_size) {
             let recent = self.recent_index.write().await;
             let mut historical = self.historical_index.write().await;
-            
+
             for id in batch {
                 // Get vector from recent index
                 if let Some(node) = recent.get_node(id) {
                     let vector = node.vector().clone();
-                    
+
                     // Insert into historical
                     if historical.insert(id.clone(), vector).is_ok() {
                         // Remove from recent
@@ -338,47 +369,50 @@ impl HybridIndex {
                 }
             }
         }
-        
+
         // Update counts
         if migrated_count > 0 {
             let mut recent_count = self.recent_count.write().await;
             *recent_count = recent_count.saturating_sub(migrated_count);
-            
+
             let mut historical_count = self.historical_count.write().await;
             *historical_count += migrated_count;
         }
-        
+
         Ok(MigrationResult {
             vectors_migrated: migrated_count,
         })
     }
-    
+
     pub async fn migrate_with_threshold(&self, threshold: Duration) -> Result<usize, HybridError> {
         let now = Utc::now();
         let mut migrated_count = 0;
-        
+
         // Get vectors to migrate
         let timestamps = self.timestamps.read().await;
         let mut vectors_to_migrate = Vec::new();
-        
+
         for (id, timestamp) in timestamps.iter() {
-            let age = now.signed_duration_since(*timestamp).to_std().unwrap_or(Duration::from_secs(0));
+            let age = now
+                .signed_duration_since(*timestamp)
+                .to_std()
+                .unwrap_or(Duration::from_secs(0));
             if age >= threshold {
                 vectors_to_migrate.push(id.clone());
             }
         }
         drop(timestamps);
-        
+
         // Migrate in batches
         for batch in vectors_to_migrate.chunks(self.config.migration_batch_size) {
             let recent = self.recent_index.write().await;
             let mut historical = self.historical_index.write().await;
-            
+
             for id in batch {
                 // Get vector from recent index
                 if let Some(node) = recent.get_node(id) {
                     let vector = node.vector().clone();
-                    
+
                     // Insert into historical
                     if historical.insert(id.clone(), vector).is_ok() {
                         // Remove from recent
@@ -388,79 +422,86 @@ impl HybridIndex {
                 }
             }
         }
-        
+
         // Update counts
         if migrated_count > 0 {
             let mut recent_count = self.recent_count.write().await;
             *recent_count = recent_count.saturating_sub(migrated_count);
-            
+
             let mut historical_count = self.historical_count.write().await;
             *historical_count += migrated_count;
         }
-        
+
         Ok(migrated_count)
     }
-    
+
     pub fn is_in_recent(&self, id: &VectorId) -> bool {
         // Check if the vector exists and is recent
         if let Ok(timestamps) = self.timestamps.try_read() {
             if let Some(timestamp) = timestamps.get(id) {
                 let now = Utc::now();
-                let age = now.signed_duration_since(*timestamp).to_std().unwrap_or(Duration::from_secs(0));
+                let age = now
+                    .signed_duration_since(*timestamp)
+                    .to_std()
+                    .unwrap_or(Duration::from_secs(0));
                 return age < self.config.recent_threshold;
             }
         }
         false
     }
-    
+
     pub fn is_in_historical(&self, id: &VectorId) -> bool {
         // Check if the vector exists and is historical
         if let Ok(timestamps) = self.timestamps.try_read() {
             if let Some(timestamp) = timestamps.get(id) {
                 let now = Utc::now();
-                let age = now.signed_duration_since(*timestamp).to_std().unwrap_or(Duration::from_secs(0));
+                let age = now
+                    .signed_duration_since(*timestamp)
+                    .to_std()
+                    .unwrap_or(Duration::from_secs(0));
                 return age >= self.config.recent_threshold;
             }
         }
         false
     }
-    
+
     pub async fn start_auto_migration(&self) -> Result<(), HybridError> {
         // For now, just trigger a migration immediately
         // In a real implementation, this would start a background task
         self.migrate_old_vectors().await?;
         Ok(())
     }
-    
+
     pub async fn stop_auto_migration(&self) -> Result<(), HybridError> {
         // Stop auto migration background task
         // In a real implementation, this would cancel the background task
         Ok(())
     }
-    
+
     pub async fn get_statistics(&self) -> HybridStats {
         let recent = self.recent_index.read().await;
         let historical = self.historical_index.read().await;
         let timestamps = self.timestamps.read().await;
-        
+
         let recent_count = recent.node_count();
         let historical_count = historical.total_vectors();
         let total = recent_count + historical_count;
-        
+
         let now = Utc::now();
         let avg_age_ms = if total > 0 {
-            let total_age_ms: i64 = timestamps.values()
+            let total_age_ms: i64 = timestamps
+                .values()
                 .map(|ts| now.signed_duration_since(*ts).num_milliseconds())
                 .sum();
             total_age_ms as f64 / total as f64
         } else {
             0.0
         };
-        
+
         // Estimate memory usage
         let recent_memory = recent_count * 500; // Rough estimate: 500 bytes per HNSW node
         let historical_memory = historical_count * 100; // Rough estimate: 100 bytes per IVF vector
-        
+
         HybridStats {
             recent_vectors: recent_count,
             historical_vectors: historical_count,
@@ -471,7 +512,7 @@ impl HybridIndex {
             avg_query_time_ms: 0.0,
         }
     }
-    
+
     pub fn get_stats(&self) -> HybridStats {
         // Synchronous wrapper - returns empty stats
         HybridStats {
@@ -484,19 +525,22 @@ impl HybridIndex {
             avg_query_time_ms: 0.0,
         }
     }
-    
+
     pub async fn get_age_distribution(&self) -> Result<AgeDistribution, HybridError> {
         let timestamps = self.timestamps.read().await;
         let now = Utc::now();
-        
+
         let mut under_1_hour = 0;
         let mut under_1_day = 0;
         let mut under_1_week = 0;
         let mut over_1_week = 0;
-        
+
         for timestamp in timestamps.values() {
-            let age = now.signed_duration_since(*timestamp).to_std().unwrap_or(Duration::from_secs(0));
-            
+            let age = now
+                .signed_duration_since(*timestamp)
+                .to_std()
+                .unwrap_or(Duration::from_secs(0));
+
             if age < Duration::from_secs(3600) {
                 under_1_hour += 1;
             } else if age < Duration::from_secs(24 * 3600) {
@@ -507,16 +551,16 @@ impl HybridIndex {
                 over_1_week += 1;
             }
         }
-        
+
         let total = under_1_hour + under_1_day + under_1_week + over_1_week;
-        
+
         let buckets = vec![
             ("< 1 hour".to_string(), under_1_hour),
             ("< 1 day".to_string(), under_1_day),
             ("< 1 week".to_string(), under_1_week),
             ("> 1 week".to_string(), over_1_week),
         ];
-        
+
         // Find newest and oldest timestamps
         let (newest, oldest) = if timestamps.is_empty() {
             (now, now)
@@ -533,7 +577,7 @@ impl HybridIndex {
             }
             (*newest, *oldest)
         };
-        
+
         Ok(AgeDistribution {
             under_1_hour,
             under_1_day,
@@ -545,18 +589,18 @@ impl HybridIndex {
             oldest_timestamp: oldest,
         })
     }
-    
+
     pub fn total_vectors(&self) -> usize {
         // Use try_read to avoid blocking
         let recent = self.recent_count.try_read().map(|c| *c).unwrap_or(0);
         let historical = self.historical_count.try_read().map(|c| *c).unwrap_or(0);
         recent + historical
     }
-    
+
     pub fn recent_count(&self) -> usize {
         self.recent_count.try_read().map(|c| *c).unwrap_or(0)
     }
-    
+
     pub fn historical_count(&self) -> usize {
         self.historical_count.try_read().map(|c| *c).unwrap_or(0)
     }

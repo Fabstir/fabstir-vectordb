@@ -1,5 +1,5 @@
-use vector_db::core::types::*;
 use approx::assert_relative_eq;
+use vector_db::core::types::*;
 
 #[cfg(test)]
 mod vector_id_tests {
@@ -44,7 +44,7 @@ mod embedding_tests {
         let data = vec![3.0, 4.0]; // 3-4-5 triangle
         let embedding = Embedding::new(data);
         let normalized = embedding.normalize();
-        
+
         assert_relative_eq!(normalized.magnitude(), 1.0, epsilon = 1e-6);
         assert_relative_eq!(normalized.as_slice()[0], 0.6, epsilon = 1e-6);
         assert_relative_eq!(normalized.as_slice()[1], 0.8, epsilon = 1e-6);
@@ -55,7 +55,7 @@ mod embedding_tests {
         let a = Embedding::new(vec![1.0, 0.0, 0.0]);
         let b = Embedding::new(vec![0.0, 1.0, 0.0]);
         let c = Embedding::new(vec![1.0, 0.0, 0.0]);
-        
+
         assert_relative_eq!(a.cosine_similarity(&b), 0.0, epsilon = 1e-6);
         assert_relative_eq!(a.cosine_similarity(&c), 1.0, epsilon = 1e-6);
     }
@@ -64,7 +64,7 @@ mod embedding_tests {
     fn test_euclidean_distance() {
         let a = Embedding::new(vec![0.0, 0.0]);
         let b = Embedding::new(vec![3.0, 4.0]);
-        
+
         assert_relative_eq!(a.euclidean_distance(&b), 5.0, epsilon = 1e-6);
     }
 
@@ -114,7 +114,7 @@ mod metadata_tests {
 
         let serialized = metadata.to_cbor().unwrap();
         let deserialized = VideoMetadata::from_cbor(&serialized).unwrap();
-        
+
         assert_eq!(metadata.video_id, deserialized.video_id);
         assert_eq!(metadata.title, deserialized.title);
     }
@@ -145,7 +145,7 @@ mod search_result_tests {
         ];
 
         results.sort();
-        
+
         assert_eq!(results[0].distance, 0.1);
         assert_eq!(results[1].distance, 0.3);
         assert_eq!(results[2].distance, 0.5);

@@ -1,8 +1,8 @@
-use vector_db::core::storage::*;
-use vector_db::core::types::*;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio;
+use vector_db::core::storage::*;
+use vector_db::core::types::*;
 
 #[cfg(test)]
 mod s5_storage_tests {
@@ -28,7 +28,7 @@ mod s5_storage_tests {
         async fn get(&self, path: &str) -> Result<Option<Vec<u8>>, StorageError> {
             let mut counts = self.call_count.write().await;
             *counts.entry(path.to_string()).or_insert(0) += 1;
-            
+
             let data = self.data.read().await;
             Ok(data.get(path).cloned())
         }
@@ -47,7 +47,8 @@ mod s5_storage_tests {
 
         async fn list(&self, prefix: &str) -> Result<Vec<String>, StorageError> {
             let data = self.data.read().await;
-            Ok(data.keys()
+            Ok(data
+                .keys()
                 .filter(|k| k.starts_with(prefix))
                 .cloned()
                 .collect())
@@ -82,7 +83,7 @@ mod s5_storage_tests {
     async fn test_cached_storage() {
         let base = MockS5Storage::new();
         let cached = CachedS5Storage::new(base, 100);
-        
+
         let path = "/cached/test";
         let data = b"cached data".to_vec();
 
@@ -136,7 +137,7 @@ mod s5_storage_tests {
             async fn get(&self, path: &str) -> Result<Option<Vec<u8>>, StorageError> {
                 let mut attempts = self.attempts.write().await;
                 *attempts += 1;
-                
+
                 if *attempts < 3 {
                     Err(StorageError::NetworkError("Simulated failure".into()))
                 } else {
@@ -161,9 +162,9 @@ mod s5_storage_tests {
             attempts: tokio::sync::RwLock::new(0),
             inner: MockS5Storage::new(),
         };
-        
+
         let retry_storage = RetryS5Storage::new(flaky, 3);
-        
+
         // This should succeed after retries
         retry_storage.put("/test", b"data".to_vec()).await.unwrap();
         let result = retry_storage.get("/test").await.unwrap();

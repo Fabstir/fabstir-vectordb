@@ -1,3 +1,3 @@
 mod core;
-mod persistence;
 mod operations;
+mod persistence;

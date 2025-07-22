@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use thiserror::Error;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Mutex};
+use thiserror::Error;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 
 #[derive(Error, Debug)]
@@ -91,7 +91,7 @@ impl<T: S5Storage> CachedS5Storage<T> {
             })),
         }
     }
-    
+
     pub async fn stats(&self) -> CacheStats {
         self.stats.read().await.clone()
     }
@@ -127,7 +127,7 @@ impl<T: S5Storage> CachedS5Storage<T> {
             }
         }
     }
-    
+
     async fn evict_for_size(&self, new_size: usize) {
         let mut cache = self.cache.write().await;
         let mut order = self.access_order.write().await;
@@ -164,11 +164,11 @@ impl<T: S5Storage> S5Storage for CachedS5Storage<T> {
                 if !self.is_expired(entry).await {
                     let data = entry.data.clone();
                     drop(cache);
-                    
+
                     let mut stats = self.stats.write().await;
                     stats.hits += 1;
                     drop(stats);
-                    
+
                     self.update_lru(path).await;
                     return Ok(Some(data));
                 }
@@ -177,7 +177,7 @@ impl<T: S5Storage> S5Storage for CachedS5Storage<T> {
 
         // Cache miss - fetch from inner storage
         let result = self.inner.get(path).await?;
-        
+
         let mut stats = self.stats.write().await;
         stats.misses += 1;
         drop(stats);
@@ -191,7 +191,7 @@ impl<T: S5Storage> S5Storage for CachedS5Storage<T> {
             };
 
             self.evict_if_needed().await;
-            
+
             let mut cache = self.cache.write().await;
             let mut stats = self.stats.write().await;
             cache.insert(path.to_string(), entry);
@@ -199,36 +199,36 @@ impl<T: S5Storage> S5Storage for CachedS5Storage<T> {
             stats.memory_bytes += data.len();
             drop(cache);
             drop(stats);
-            
+
             self.update_lru(path).await;
         }
 
         Ok(result)
     }
-    
+
     async fn put(&self, path: &str, data: Vec<u8>) -> Result<(), StorageError> {
         // Write through to storage
         self.inner.put(path, data.clone()).await?;
-        
+
         // Update cache
         let entry = CacheEntry {
             size: data.len(),
             data,
             timestamp: Instant::now(),
         };
-        
+
         let mut cache = self.cache.write().await;
         let mut stats = self.stats.write().await;
-        
+
         // Check if we're updating an existing entry
         let is_update = cache.contains_key(path);
-        
+
         // Remove old entry if exists
         if let Some(old_entry) = cache.remove(path) {
             stats.memory_bytes -= old_entry.size;
             stats.entries -= 1;
         }
-        
+
         // Only evict if we're adding a new entry (not updating)
         if !is_update {
             drop(cache);
@@ -238,22 +238,22 @@ impl<T: S5Storage> S5Storage for CachedS5Storage<T> {
             cache = self.cache.write().await;
             stats = self.stats.write().await;
         }
-        
+
         cache.insert(path.to_string(), entry);
         stats.entries += 1;
         stats.memory_bytes += cache.get(path).unwrap().size;
         drop(cache);
         drop(stats);
-        
+
         self.update_lru(path).await;
-        
+
         Ok(())
     }
-    
+
     async fn delete(&self, path: &str) -> Result<(), StorageError> {
         // Delete from storage
         self.inner.delete(path).await?;
-        
+
         // Remove from cache
         let mut cache = self.cache.write().await;
         let mut stats = self.stats.write().await;
@@ -261,13 +261,13 @@ impl<T: S5Storage> S5Storage for CachedS5Storage<T> {
             stats.entries -= 1;
             stats.memory_bytes -= entry.size;
         }
-        
+
         let mut order = self.access_order.write().await;
         order.retain(|k| k != path);
-        
+
         Ok(())
     }
-    
+
     async fn list(&self, prefix: &str) -> Result<Vec<String>, StorageError> {
         self.inner.list(prefix).await
     }
@@ -359,7 +359,11 @@ impl<T: S5Storage> RetryS5Storage<T> {
         }
     }
 
-    pub fn with_circuit_breaker(inner: T, failure_threshold: usize, reset_timeout: Duration) -> Self {
+    pub fn with_circuit_breaker(
+        inner: T,
+        failure_threshold: usize,
+        reset_timeout: Duration,
+    ) -> Self {
         let mut storage = Self::new(inner, 3);
         storage.circuit_breaker = Some(CircuitBreaker::new(failure_threshold, reset_timeout));
         storage
@@ -388,7 +392,7 @@ impl<T: S5Storage> RetryS5Storage<T> {
 
         loop {
             attempts += 1;
-            
+
             match operation().await {
                 Ok(result) => {
                     if let Some(ref breaker) = self.circuit_breaker {
@@ -406,21 +410,21 @@ impl<T: S5Storage> RetryS5Storage<T> {
                     if let Some(ref breaker) = self.circuit_breaker {
                         breaker.record_failure().await;
                     }
-                    
+
                     // Apply jitter if enabled
                     let mut actual_delay = delay;
                     if self.use_jitter {
                         let jitter = Duration::from_millis(
-                            (rand::random::<f64>() * delay.as_millis() as f64 * 0.3) as u64
+                            (rand::random::<f64>() * delay.as_millis() as f64 * 0.3) as u64,
                         );
                         actual_delay = delay + jitter;
                     }
-                    
+
                     sleep(actual_delay).await;
-                    
+
                     // Calculate next delay with exponential backoff
                     let next_delay = Duration::from_millis(
-                        (delay.as_millis() as f64 * self.config.exponential_base) as u64
+                        (delay.as_millis() as f64 * self.config.exponential_base) as u64,
                     );
                     delay = next_delay.min(self.config.max_delay);
                 }
@@ -437,9 +441,10 @@ impl<T: S5Storage> S5Storage for RetryS5Storage<T> {
             let inner = &self.inner;
             let path = path.clone();
             async move { inner.get(&path).await }
-        }).await
+        })
+        .await
     }
-    
+
     async fn put(&self, path: &str, data: Vec<u8>) -> Result<(), StorageError> {
         let path = path.to_string();
         self.retry_with_backoff(|| {
@@ -447,25 +452,28 @@ impl<T: S5Storage> S5Storage for RetryS5Storage<T> {
             let path = path.clone();
             let data = data.clone();
             async move { inner.put(&path, data).await }
-        }).await
+        })
+        .await
     }
-    
+
     async fn delete(&self, path: &str) -> Result<(), StorageError> {
         let path = path.to_string();
         self.retry_with_backoff(|| {
             let inner = &self.inner;
             let path = path.clone();
             async move { inner.delete(&path).await }
-        }).await
+        })
+        .await
     }
-    
+
     async fn list(&self, prefix: &str) -> Result<Vec<String>, StorageError> {
         let prefix = prefix.to_string();
         self.retry_with_backoff(|| {
             let inner = &self.inner;
             let prefix = prefix.clone();
             async move { inner.list(&prefix).await }
-        }).await
+        })
+        .await
     }
 }
 
@@ -505,20 +513,20 @@ impl<T: S5Storage + 'static> BatchS5Storage<T> {
             write_buffer: Arc::new(Mutex::new(HashMap::new())),
             delete_buffer: Arc::new(Mutex::new(Vec::new())),
         };
-        
+
         // Start background flush task
         let inner_clone = storage.inner.clone();
         let write_buffer_clone = storage.write_buffer.clone();
         let delete_buffer_clone = storage.delete_buffer.clone();
         let flush_interval = storage.config.flush_interval;
-        
+
         tokio::spawn(async move {
             loop {
                 sleep(flush_interval).await;
                 Self::flush_buffers(&inner_clone, &write_buffer_clone, &delete_buffer_clone).await;
             }
         });
-        
+
         storage
     }
 
@@ -536,17 +544,17 @@ impl<T: S5Storage + 'static> BatchS5Storage<T> {
             let mut buffer = write_buffer.lock().await;
             std::mem::take(&mut *buffer)
         };
-        
+
         for (path, data) in writes {
             let _ = inner.put(&path, data).await;
         }
-        
+
         // Flush deletes
         let deletes = {
             let mut buffer = delete_buffer.lock().await;
             std::mem::take(&mut *buffer)
         };
-        
+
         for path in deletes {
             let _ = inner.delete(&path).await;
         }
@@ -558,7 +566,7 @@ impl<T: S5Storage + 'static> BatchS5Storage<T> {
             let delete_buffer = self.delete_buffer.lock().await;
             write_buffer.len() + delete_buffer.len() >= self.config.max_batch_size
         };
-        
+
         if should_flush {
             Self::flush_buffers(&self.inner, &self.write_buffer, &self.delete_buffer).await;
         }
@@ -575,7 +583,7 @@ impl<T: S5Storage + 'static> S5Storage for BatchS5Storage<T> {
                 return Ok(Some(data.clone()));
             }
         }
-        
+
         // Check if it's in delete buffer
         {
             let buffer = self.delete_buffer.lock().await;
@@ -583,39 +591,39 @@ impl<T: S5Storage + 'static> S5Storage for BatchS5Storage<T> {
                 return Ok(None);
             }
         }
-        
+
         // Fall back to inner storage
         self.inner.get(path).await
     }
-    
+
     async fn put(&self, path: &str, data: Vec<u8>) -> Result<(), StorageError> {
         {
             let mut write_buffer = self.write_buffer.lock().await;
             write_buffer.insert(path.to_string(), data);
-            
+
             // Remove from delete buffer if present
             let mut delete_buffer = self.delete_buffer.lock().await;
             delete_buffer.retain(|p| p != path);
         }
-        
+
         self.check_and_flush().await;
         Ok(())
     }
-    
+
     async fn delete(&self, path: &str) -> Result<(), StorageError> {
         {
             let mut delete_buffer = self.delete_buffer.lock().await;
             delete_buffer.push(path.to_string());
-            
+
             // Remove from write buffer if present
             let mut write_buffer = self.write_buffer.lock().await;
             write_buffer.remove(path);
         }
-        
+
         self.check_and_flush().await;
         Ok(())
     }
-    
+
     async fn list(&self, prefix: &str) -> Result<Vec<String>, StorageError> {
         // For list operations, we need to flush first to ensure consistency
         Self::flush_buffers(&self.inner, &self.write_buffer, &self.delete_buffer).await;
@@ -644,7 +652,7 @@ impl S5Storage for MockS5Storage {
     async fn get(&self, path: &str) -> Result<Option<Vec<u8>>, StorageError> {
         let mut counts = self.call_count.write().await;
         *counts.entry(path.to_string()).or_insert(0) += 1;
-        
+
         let data = self.data.read().await;
         Ok(data.get(path).cloned())
     }
@@ -663,7 +671,8 @@ impl S5Storage for MockS5Storage {
 
     async fn list(&self, prefix: &str) -> Result<Vec<String>, StorageError> {
         let data = self.data.read().await;
-        Ok(data.keys()
+        Ok(data
+            .keys()
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect())

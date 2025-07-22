@@ -1,9 +1,9 @@
-use vector_db::api::rest::*;
-use vector_db::core::types::*;
-use axum::http::{StatusCode, HeaderName, HeaderValue};
+use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum_test::TestServer;
 use serde_json::json;
 use tokio;
+use vector_db::api::rest::*;
+use vector_db::core::types::*;
 
 #[cfg(test)]
 mod api_setup_tests {
@@ -13,19 +13,19 @@ mod api_setup_tests {
     async fn test_server_initialization() {
         let config = ApiConfig {
             host: "127.0.0.1".to_string(),
-            port: 0, // Random port
+            port: 0,                            // Random port
             max_request_size: 10 * 1024 * 1024, // 10MB
             timeout: std::time::Duration::from_secs(30),
             cors_origins: vec!["http://localhost:3000".to_string()],
         };
-        
+
         let app = create_app(config).await.unwrap();
         let server = TestServer::new(app).unwrap();
-        
+
         // Test health endpoint
         let response = server.get("/health").await;
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         assert_eq!(json["status"], "healthy");
         assert!(json["version"].is_string());
@@ -38,17 +38,20 @@ mod api_setup_tests {
         let config = ApiConfig::default();
         let app = create_app(config).await.unwrap();
         let server = TestServer::new(app).unwrap();
-        
+
         let response = server
             .get("/health")
             .add_header(
                 HeaderName::from_static("origin"),
-                HeaderValue::from_static("http://localhost:3000")
+                HeaderValue::from_static("http://localhost:3000"),
             )
             .await;
-        
+
         response.assert_status(StatusCode::OK);
-        assert!(response.headers().get("access-control-allow-origin").is_some());
+        assert!(response
+            .headers()
+            .get("access-control-allow-origin")
+            .is_some());
     }
 }
 
@@ -60,7 +63,7 @@ mod vector_operations_tests {
     async fn test_insert_vector() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         let payload = json!({
             "id": "video_123",
             "vector": [1.0, 2.0, 3.0],
@@ -70,14 +73,11 @@ mod vector_operations_tests {
                 "upload_date": "2024-01-01T00:00:00Z"
             }
         });
-        
-        let response = server
-            .post("/vectors")
-            .json(&payload)
-            .await;
-        
+
+        let response = server.post("/vectors").json(&payload).await;
+
         response.assert_status(StatusCode::CREATED);
-        
+
         let json: serde_json::Value = response.json();
         assert_eq!(json["id"], "video_123");
         assert_eq!(json["index"], "recent");
@@ -88,7 +88,7 @@ mod vector_operations_tests {
     async fn test_batch_insert() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         let payload = json!({
             "vectors": [
                 {
@@ -108,14 +108,11 @@ mod vector_operations_tests {
                 }
             ]
         });
-        
-        let response = server
-            .post("/vectors/batch")
-            .json(&payload)
-            .await;
-        
+
+        let response = server.post("/vectors/batch").json(&payload).await;
+
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         assert_eq!(json["successful"], 3);
         assert_eq!(json["failed"], 0);
@@ -126,23 +123,23 @@ mod vector_operations_tests {
     async fn test_get_vector() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // First insert a vector
         let payload = json!({
             "id": "test_vector",
             "vector": [1.0, 2.0, 3.0],
             "metadata": {"test": true}
         });
-        
+
         server.post("/vectors").json(&payload).await;
-        
+
         // Now retrieve it
         let response = server.get("/vectors/test_vector").await;
-        
+
         // TODO: For now, the get_vector handler returns NOT_FOUND
         // Once implemented, change this to expect OK
         response.assert_status(StatusCode::NOT_FOUND);
-        
+
         // let json: serde_json::Value = response.json();
         // assert_eq!(json["id"], "test_vector");
         // assert_eq!(json["vector"], json!([1.0, 2.0, 3.0]));
@@ -154,18 +151,18 @@ mod vector_operations_tests {
     async fn test_delete_vector() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Insert vector
         let payload = json!({
             "id": "to_delete",
             "vector": [1.0, 1.0, 1.0]
         });
         server.post("/vectors").json(&payload).await;
-        
+
         // Delete it
         let response = server.delete("/vectors/to_delete").await;
         response.assert_status(StatusCode::OK);
-        
+
         // Verify it's gone
         let get_response = server.get("/vectors/to_delete").await;
         get_response.assert_status(StatusCode::NOT_FOUND);
@@ -175,24 +172,24 @@ mod vector_operations_tests {
     async fn test_vector_validation() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Test empty vector
         let payload = json!({
             "id": "invalid",
             "vector": []
         });
-        
+
         let response = server.post("/vectors").json(&payload).await;
         response.assert_status(StatusCode::BAD_REQUEST);
-        
+
         let json: serde_json::Value = response.json();
         assert!(json["error"].as_str().unwrap().contains("empty"));
-        
+
         // Test missing ID
         let payload = json!({
             "vector": [1.0, 2.0, 3.0]
         });
-        
+
         let response = server.post("/vectors").json(&payload).await;
         response.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -206,7 +203,7 @@ mod search_tests {
     async fn test_basic_search() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Insert test vectors
         for i in 0..5 {
             let payload = json!({
@@ -218,28 +215,25 @@ mod search_tests {
             });
             server.post("/vectors").json(&payload).await;
         }
-        
+
         // Search
         let search_payload = json!({
             "vector": [2.5, 0.0, 0.0],
             "k": 3
         });
-        
-        let response = server
-            .post("/search")
-            .json(&search_payload)
-            .await;
-        
+
+        let response = server.post("/search").json(&search_payload).await;
+
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         let results = json["results"].as_array().unwrap();
-        
+
         // TODO: Currently returns empty results
         // Once implemented, uncomment the following assertions
         // assert_eq!(results.len(), 3);
         // Results should be sorted by distance
-        // assert!(results[0]["distance"].as_f64().unwrap() < 
+        // assert!(results[0]["distance"].as_f64().unwrap() <
         //         results[1]["distance"].as_f64().unwrap());
     }
 
@@ -247,7 +241,7 @@ mod search_tests {
     async fn test_search_with_filters() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Insert vectors with categories
         for i in 0..6 {
             let payload = json!({
@@ -259,7 +253,7 @@ mod search_tests {
             });
             server.post("/vectors").json(&payload).await;
         }
-        
+
         // Search with filter
         let search_payload = json!({
             "vector": [3.0, 0.0, 0.0],
@@ -268,13 +262,13 @@ mod search_tests {
                 "category": "gaming"
             }
         });
-        
+
         let response = server.post("/search").json(&search_payload).await;
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         let results = json["results"].as_array().unwrap();
-        
+
         // All results should be gaming videos
         for result in results {
             assert_eq!(result["metadata"]["category"], "gaming");
@@ -285,10 +279,10 @@ mod search_tests {
     async fn test_search_with_options() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Insert test data
         setup_test_data(&server).await;
-        
+
         // Search with advanced options
         let search_payload = json!({
             "vector": [1.0, 1.0, 1.0],
@@ -303,15 +297,15 @@ mod search_tests {
                 "score_threshold": 0.5
             }
         });
-        
+
         let response = server.post("/search").json(&search_payload).await;
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         // TODO: Currently returns 0 for search_time_ms
         // assert!(json["search_time_ms"].as_f64().unwrap() > 0.0);
         assert!(json["indices_searched"].as_u64().unwrap() <= 2);
-        
+
         let results = json["results"].as_array().unwrap();
         // TODO: Currently returns empty results
         // All results should meet score threshold
@@ -324,10 +318,10 @@ mod search_tests {
     async fn test_search_timeout() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Setup large dataset
         setup_large_dataset(&server).await;
-        
+
         // Search with very short timeout
         let search_payload = json!({
             "vector": [0.5, 0.5, 0.5],
@@ -336,10 +330,10 @@ mod search_tests {
                 "timeout_ms": 1 // 1ms timeout
             }
         });
-        
+
         let response = server.post("/search").json(&search_payload).await;
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         // TODO: Currently doesn't support timeout indication
         // Should indicate timeout
@@ -355,7 +349,7 @@ mod admin_tests {
     async fn test_get_statistics() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Add some data
         for i in 0..10 {
             let payload = json!({
@@ -364,10 +358,10 @@ mod admin_tests {
             });
             server.post("/vectors").json(&payload).await;
         }
-        
+
         let response = server.get("/admin/statistics").await;
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         // TODO: Currently returns 0 for all stats
         // assert_eq!(json["total_vectors"], 10);
@@ -380,10 +374,10 @@ mod admin_tests {
     async fn test_trigger_migration() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         let response = server.post("/admin/migrate").await;
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         assert!(json["vectors_migrated"].is_number());
         assert!(json["duration_ms"].as_f64().unwrap() >= 0.0);
@@ -393,10 +387,10 @@ mod admin_tests {
     async fn test_rebalance() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         let response = server.post("/admin/rebalance").await;
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         assert!(json["clusters_modified"].is_number());
         assert!(json["vectors_moved"].is_number());
@@ -406,19 +400,16 @@ mod admin_tests {
     async fn test_backup() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         let backup_request = json!({
             "backup_path": "/backups/test_backup",
             "compress": true
         });
-        
-        let response = server
-            .post("/admin/backup")
-            .json(&backup_request)
-            .await;
-        
+
+        let response = server.post("/admin/backup").json(&backup_request).await;
+
         response.assert_status(StatusCode::OK);
-        
+
         let json: serde_json::Value = response.json();
         // TODO: Currently returns 0 for backup stats
         // assert!(json["backup_size"].as_u64().unwrap() > 0);
@@ -435,7 +426,7 @@ mod streaming_tests {
     async fn test_sse_updates() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // For now, just test that the endpoint exists
         // Full SSE testing would require a more sophisticated test setup
         let response = server.get("/stream/updates").await;
@@ -446,10 +437,10 @@ mod streaming_tests {
     async fn test_websocket_search() {
         let app = create_test_app().await;
         let server = TestServer::new(app).unwrap();
-        
+
         // Would need WebSocket test client
         // This is a placeholder for WebSocket testing
-        
+
         let response = server.get("/ws").await;
         response.assert_status(StatusCode::SWITCHING_PROTOCOLS);
     }

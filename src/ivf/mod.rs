@@ -1,18 +1,16 @@
 pub mod core;
-pub mod persistence;
 pub mod operations;
+pub mod persistence;
 
-pub use self::core::{
-    IVFConfig, IVFIndex, IVFError, ClusterId, Centroid, TrainResult
-};
+pub use self::core::{Centroid, ClusterId, IVFConfig, IVFError, IVFIndex, TrainResult};
 
 pub use self::persistence::{
-    IVFMetadata, IVFPersister, PersistenceError, SerializableInvertedList,
-    IntegrityCheckResult, MigrationResult, serialize_centroids, calculate_total_size
+    calculate_total_size, serialize_centroids, IVFMetadata, IVFPersister, IntegrityCheckResult,
+    MigrationResult, PersistenceError, SerializableInvertedList,
 };
 
 pub use self::operations::{
-    OperationError, BatchInsertResult, RetrainResult, AddClustersResult,
-    OptimizationResult, ClusterStats, MemoryUsage, SearchQuality,
-    CompactionResult, BalanceResult, ExportedCentroid
+    AddClustersResult, BalanceResult, BatchInsertResult, ClusterStats, CompactionResult,
+    ExportedCentroid, MemoryUsage, OperationError, OptimizationResult, RetrainResult,
+    SearchQuality,
 };

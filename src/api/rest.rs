@@ -1,19 +1,18 @@
+use crate::core::types::*;
+use crate::hybrid::{HybridConfig, HybridIndex};
 use axum::{
-    Router,
-    routing::{get, post, delete},
-    Json,
     extract::{Path, State},
-    response::{IntoResponse, Response, Sse},
     http::StatusCode,
+    response::{IntoResponse, Response, Sse},
+    routing::{delete, get, post},
+    Json, Router,
 };
-use tower_http::cors::{CorsLayer, Any};
-use tower_http::limit::RequestBodyLimitLayer;
+use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use futures::stream::Stream;
-use crate::core::types::*;
-use crate::hybrid::{HybridIndex, HybridConfig};
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::limit::RequestBodyLimitLayer;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiConfig {
@@ -42,7 +41,7 @@ pub struct AppState {
 }
 
 // Request/Response types
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsertVectorRequest {
     pub id: String,
     pub vector: Vec<f32>,
@@ -57,7 +56,7 @@ pub struct InsertVectorResponse {
     pub timestamp: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchInsertRequest {
     pub vectors: Vec<InsertVectorRequest>,
 }
@@ -75,7 +74,7 @@ pub struct BatchError {
     pub error: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchRequest {
     pub vector: Vec<f32>,
     pub k: usize,
@@ -85,7 +84,7 @@ pub struct SearchRequest {
     pub options: Option<SearchOptions>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SearchOptions {
     pub search_recent: Option<bool>,
     pub search_historical: Option<bool>,
@@ -159,7 +158,7 @@ pub struct RebalanceResponse {
     pub vectors_moved: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupRequest {
     pub backup_path: String,
     pub compress: bool,
@@ -187,7 +186,7 @@ impl ErrorResponse {
             status_code: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
-    
+
     pub fn bad_request(error: String) -> Self {
         Self {
             error,
@@ -206,47 +205,44 @@ pub async fn create_app(config: ApiConfig) -> Result<Router, Box<dyn std::error:
     // Initialize HybridIndex with default config
     let hybrid_config = HybridConfig::default();
     let hybrid_index = Arc::new(HybridIndex::new(hybrid_config));
-    
+
     let state = AppState { hybrid_index };
-    
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    
+
     let app = Router::new()
         // Health check
         .route("/health", get(health_handler))
-        
         // Vector operations
         .route("/vectors", post(insert_vector))
         .route("/vectors/batch", post(batch_insert))
         .route("/vectors/:id", get(get_vector))
         .route("/vectors/:id", delete(delete_vector))
-        
         // Search
         .route("/search", post(search))
-        
         // Admin
         .route("/admin/statistics", get(get_statistics))
         .route("/admin/migrate", post(trigger_migration))
         .route("/admin/rebalance", post(rebalance))
         .route("/admin/backup", post(backup))
-        
         // Streaming
         .route("/stream/updates", get(sse_updates))
         .route("/ws", get(websocket_handler))
-        
         // Middleware
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(config.max_request_size))
         .with_state(state);
-    
+
     Ok(app)
 }
 
 // Handler implementations
-async fn health_handler(State(state): State<AppState>) -> Result<Json<HealthResponse>, ErrorResponse> {
+async fn health_handler(
+    State(state): State<AppState>,
+) -> Result<Json<HealthResponse>, ErrorResponse> {
     // TODO: Implement actual health checks
     Ok(Json(HealthResponse {
         status: "healthy".to_string(),
@@ -272,7 +268,7 @@ async fn insert_vector(
     if let Err(e) = validate_vector(&request.vector) {
         return Err(ErrorResponse::bad_request(e));
     }
-    
+
     // TODO: Implement actual vector insertion to hybrid index
     Ok((
         StatusCode::CREATED,

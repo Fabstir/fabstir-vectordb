@@ -1,33 +1,33 @@
-use crate::core::types::VectorId;
 use crate::core::storage::S5Storage;
+use crate::core::types::VectorId;
 use crate::hybrid::core::HybridIndex;
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use chrono::{DateTime, Utc};
-use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum MaintenanceError {
     #[error("Migration error: {0}")]
     Migration(String),
-    
+
     #[error("Rebalancing error: {0}")]
     Rebalancing(String),
-    
+
     #[error("Cleanup error: {0}")]
     Cleanup(String),
-    
+
     #[error("Backup error: {0}")]
     Backup(String),
-    
+
     #[error("Monitoring error: {0}")]
     Monitoring(String),
-    
+
     #[error("Storage error: {0}")]
     Storage(String),
-    
+
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
 }
@@ -265,7 +265,17 @@ pub struct HealthMonitor {
     index: HybridIndex,
     config: Arc<RwLock<AlertConfig>>,
     alerts: Arc<RwLock<Vec<Alert>>>,
-    alert_handler: Arc<RwLock<Option<Box<dyn Fn(Alert) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>>>>,
+    alert_handler: Arc<
+        RwLock<
+            Option<
+                Box<
+                    dyn Fn(Alert) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+                        + Send
+                        + Sync,
+                >,
+            >,
+        >,
+    >,
 }
 
 // Implementations
@@ -291,7 +301,7 @@ impl MigrationScheduler {
             running: Arc::new(RwLock::new(false)),
         }
     }
-    
+
     pub fn with_error_handler(
         index: HybridIndex,
         error_handler: Box<dyn Fn(&VectorId) -> bool + Send + Sync>,
@@ -300,31 +310,32 @@ impl MigrationScheduler {
         scheduler.error_handler = Some(error_handler);
         scheduler
     }
-    
+
     pub async fn set_policy(&self, policy: MigrationPolicy) {
         let mut current = self.policy.write().await;
         *current = policy;
     }
-    
+
     pub async fn run_migration(&self) -> Result<MigrationRunResult, MaintenanceError> {
         let start = Instant::now();
         let policy = self.policy.read().await.clone();
-        
+
         let mut result = MigrationRunResult {
             vectors_migrated: 0,
             batches_processed: 0,
             duration: Duration::from_secs(0),
             errors: vec![],
         };
-        
+
         // Get old vectors to migrate
         let timestamps = self.index.timestamps.read().await;
         let now = Utc::now();
         let threshold = self.index.config().recent_threshold;
-        
+
         let mut vectors_to_migrate = Vec::new();
         for (id, timestamp) in timestamps.iter() {
-            let age = now.signed_duration_since(*timestamp)
+            let age = now
+                .signed_duration_since(*timestamp)
                 .to_std()
                 .unwrap_or(Duration::from_secs(0));
             if age >= threshold {
@@ -335,7 +346,7 @@ impl MigrationScheduler {
             }
         }
         drop(timestamps);
-        
+
         // If we have error handler, we need to check each vector individually
         if let Some(ref handler) = self.error_handler {
             // Process in batches but check each vector
@@ -350,21 +361,25 @@ impl MigrationScheduler {
                 }
                 result.batches_processed += 1;
             }
-            
+
             // Remove failed vectors from migration list
-            let failed_ids: std::collections::HashSet<_> = result.errors.iter()
-                .map(|e| &e.vector_id)
-                .collect();
+            let failed_ids: std::collections::HashSet<_> =
+                result.errors.iter().map(|e| &e.vector_id).collect();
             vectors_to_migrate.retain(|id| !failed_ids.contains(id));
         }
-        
+
         // Migrate the remaining vectors
         if !vectors_to_migrate.is_empty() {
-            match self.index.migrate_specific_vectors(&vectors_to_migrate).await {
+            match self
+                .index
+                .migrate_specific_vectors(&vectors_to_migrate)
+                .await
+            {
                 Ok(migration_result) => {
                     result.vectors_migrated = migration_result.vectors_migrated;
                     if result.batches_processed == 0 {
-                        result.batches_processed = (result.vectors_migrated + policy.batch_size - 1) / policy.batch_size;
+                        result.batches_processed =
+                            (result.vectors_migrated + policy.batch_size - 1) / policy.batch_size;
                     }
                 }
                 Err(e) => {
@@ -372,25 +387,26 @@ impl MigrationScheduler {
                 }
             }
         }
-        
+
         // Ensure duration is not zero for tests
         result.duration = start.elapsed();
         if result.duration.as_millis() == 0 {
             result.duration = Duration::from_millis(1);
         }
-        
+
         // Update statistics
         let mut stats = self.stats.write().await;
         stats.total_vectors_migrated += result.vectors_migrated;
         stats.total_runs += 1;
         stats.avg_vectors_per_run = stats.total_vectors_migrated as f64 / stats.total_runs as f64;
-        stats.avg_duration_ms = (stats.avg_duration_ms * (stats.total_runs - 1) as f64 
-            + result.duration.as_millis() as f64) / stats.total_runs as f64;
+        stats.avg_duration_ms = (stats.avg_duration_ms * (stats.total_runs - 1) as f64
+            + result.duration.as_millis() as f64)
+            / stats.total_runs as f64;
         stats.last_run = Some(Utc::now());
-        
+
         Ok(result)
     }
-    
+
     pub async fn start_continuous(&self) -> Result<JoinHandle<()>, MaintenanceError> {
         let running = self.running.clone();
         let mut is_running = running.write().await;
@@ -399,7 +415,7 @@ impl MigrationScheduler {
         }
         *is_running = true;
         drop(is_running);
-        
+
         let scheduler = self.clone();
         let handle = tokio::spawn(async move {
             loop {
@@ -408,36 +424,36 @@ impl MigrationScheduler {
                     break;
                 }
                 drop(running);
-                
+
                 let policy = scheduler.policy.read().await;
                 let interval = policy.check_interval;
                 drop(policy);
-                
+
                 // Run migration
                 let _ = scheduler.run_migration().await;
-                
+
                 // Sleep for interval
                 tokio::time::sleep(interval).await;
             }
         });
-        
+
         Ok(handle)
     }
-    
+
     pub async fn stop_continuous(&self, handle: JoinHandle<()>) -> Result<(), MaintenanceError> {
         let mut running = self.running.write().await;
         *running = false;
         drop(running);
-        
+
         // Give it time to stop
         tokio::time::timeout(Duration::from_secs(5), handle)
             .await
             .map_err(|_| MaintenanceError::Migration("Failed to stop migration".to_string()))?
             .map_err(|e| MaintenanceError::Migration(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     pub async fn get_statistics(&self) -> MigrationStatistics {
         self.stats.read().await.clone()
     }
@@ -467,18 +483,18 @@ impl IndexRebalancer {
             running: Arc::new(RwLock::new(false)),
         }
     }
-    
+
     pub async fn analyze_balance(&self) -> Result<BalanceAnalysis, MaintenanceError> {
         // Check IVF cluster balance
         let stats = self.index.get_statistics().await;
-        
+
         // Simple balance check - in real implementation would check actual cluster sizes
         let cluster_imbalance = if stats.historical_vectors > 100 {
             0.6 // Simulated imbalance
         } else {
             0.1
         };
-        
+
         Ok(BalanceAnalysis {
             ivf_needs_rebalancing: cluster_imbalance > 0.5,
             hnsw_needs_optimization: false, // Skip HNSW due to performance
@@ -486,10 +502,13 @@ impl IndexRebalancer {
             connectivity_score: 0.9,
         })
     }
-    
-    pub async fn rebalance_ivf(&self, _config: RebalanceConfig) -> Result<RebalanceResult, MaintenanceError> {
+
+    pub async fn rebalance_ivf(
+        &self,
+        _config: RebalanceConfig,
+    ) -> Result<RebalanceResult, MaintenanceError> {
         let _start = Instant::now();
-        
+
         // Simulate rebalancing
         let result = RebalanceResult {
             clusters_modified: 3,
@@ -497,18 +516,22 @@ impl IndexRebalancer {
             final_variance: 0.15,
             iterations: 5,
         };
-        
+
         // Update stats
         let mut stats = self.stats.write().await;
         stats.total_rebalances += 1;
         stats.total_vectors_moved += result.vectors_moved;
-        stats.avg_improvement = (stats.avg_improvement * (stats.total_rebalances - 1) as f32 
-            + (0.6 - result.final_variance)) / stats.total_rebalances as f32;
-        
+        stats.avg_improvement = (stats.avg_improvement * (stats.total_rebalances - 1) as f32
+            + (0.6 - result.final_variance))
+            / stats.total_rebalances as f32;
+
         Ok(result)
     }
-    
-    pub async fn start_auto_rebalance(&self, config: AutoRebalanceConfig) -> Result<JoinHandle<()>, MaintenanceError> {
+
+    pub async fn start_auto_rebalance(
+        &self,
+        config: AutoRebalanceConfig,
+    ) -> Result<JoinHandle<()>, MaintenanceError> {
         let running = self.running.clone();
         let mut is_running = running.write().await;
         if *is_running {
@@ -516,7 +539,7 @@ impl IndexRebalancer {
         }
         *is_running = true;
         drop(is_running);
-        
+
         let rebalancer = self.clone();
         let handle = tokio::spawn(async move {
             loop {
@@ -525,38 +548,43 @@ impl IndexRebalancer {
                     break;
                 }
                 drop(running);
-                
+
                 // Check if rebalancing needed
                 if let Ok(analysis) = rebalancer.analyze_balance().await {
                     if analysis.ivf_needs_rebalancing && config.rebalance_ivf {
-                        let _ = rebalancer.rebalance_ivf(RebalanceConfig {
-                            target_cluster_size_variance: 0.2,
-                            max_iterations: 10,
-                            converge_threshold: 0.01,
-                        }).await;
+                        let _ = rebalancer
+                            .rebalance_ivf(RebalanceConfig {
+                                target_cluster_size_variance: 0.2,
+                                max_iterations: 10,
+                                converge_threshold: 0.01,
+                            })
+                            .await;
                     }
                 }
-                
+
                 tokio::time::sleep(config.check_interval).await;
             }
         });
-        
+
         Ok(handle)
     }
-    
-    pub async fn stop_auto_rebalance(&self, handle: JoinHandle<()>) -> Result<(), MaintenanceError> {
+
+    pub async fn stop_auto_rebalance(
+        &self,
+        handle: JoinHandle<()>,
+    ) -> Result<(), MaintenanceError> {
         let mut running = self.running.write().await;
         *running = false;
         drop(running);
-        
+
         tokio::time::timeout(Duration::from_secs(5), handle)
             .await
             .map_err(|_| MaintenanceError::Rebalancing("Failed to stop rebalancing".to_string()))?
             .map_err(|e| MaintenanceError::Rebalancing(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     pub async fn get_statistics(&self) -> RebalanceStatistics {
         self.stats.read().await.clone()
     }
@@ -576,7 +604,7 @@ impl IndexCleaner {
     pub fn new(index: HybridIndex) -> Self {
         Self { index }
     }
-    
+
     pub async fn scan_for_issues(&self) -> Result<IssueReport, MaintenanceError> {
         Ok(IssueReport {
             orphaned_vectors: vec![],
@@ -585,10 +613,10 @@ impl IndexCleaner {
             total_issues: 0,
         })
     }
-    
+
     pub async fn cleanup(&self, config: CleanupConfig) -> Result<CleanupResult, MaintenanceError> {
         let start = Instant::now();
-        
+
         Ok(CleanupResult {
             orphans_removed: 0,
             space_reclaimed: 0,
@@ -596,10 +624,10 @@ impl IndexCleaner {
             duration: start.elapsed(),
         })
     }
-    
+
     pub async fn estimate_storage_usage(&self) -> Result<StorageUsage, MaintenanceError> {
         let stats = self.index.get_statistics().await;
-        
+
         Ok(StorageUsage {
             total_bytes: stats.recent_index_memory + stats.historical_index_memory,
             recent_index_bytes: stats.recent_index_memory,
@@ -607,10 +635,10 @@ impl IndexCleaner {
             metadata_bytes: stats.total_vectors * 100, // Estimate
         })
     }
-    
+
     pub async fn compact_storage(&self) -> Result<CompactionResult, MaintenanceError> {
         let start = Instant::now();
-        
+
         Ok(CompactionResult {
             indices_compacted: 2,
             space_saved_bytes: 0,
@@ -625,7 +653,7 @@ impl BackupManager {
             storage: Box::new(storage),
         }
     }
-    
+
     pub async fn create_backup(
         &self,
         index: &HybridIndex,
@@ -634,19 +662,21 @@ impl BackupManager {
     ) -> Result<BackupResult, MaintenanceError> {
         let start = Instant::now();
         let stats = index.get_statistics().await;
-        
+
         // Simulate backup
         let backup_size = if config.compress {
             (stats.total_vectors * 50) as usize // Compressed size estimate
         } else {
             (stats.total_vectors * 100) as usize
         };
-        
+
         // Store backup metadata
         let metadata = format!("backup_metadata_{}", stats.total_vectors);
-        self.storage.put(path, metadata.as_bytes().to_vec()).await
+        self.storage
+            .put(path, metadata.as_bytes().to_vec())
+            .await
             .map_err(|e| MaintenanceError::Storage(e.to_string()))?;
-        
+
         Ok(BackupResult {
             backup_size,
             vectors_backed_up: stats.total_vectors,
@@ -654,12 +684,15 @@ impl BackupManager {
             duration: start.elapsed(),
         })
     }
-    
+
     pub async fn verify_backup(&self, path: &str) -> Result<BackupVerification, MaintenanceError> {
         // Check if backup exists
-        let data = self.storage.get(path).await
+        let data = self
+            .storage
+            .get(path)
+            .await
             .map_err(|e| MaintenanceError::Storage(e.to_string()))?;
-        
+
         // Extract vector count from metadata
         if let Some(data) = data {
             let metadata = String::from_utf8_lossy(&data);
@@ -668,7 +701,7 @@ impl BackupManager {
                 .last()
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(0);
-        
+
             Ok(BackupVerification {
                 is_valid: true,
                 vector_count,
@@ -679,7 +712,7 @@ impl BackupManager {
             Err(MaintenanceError::Storage("Backup not found".to_string()))
         }
     }
-    
+
     pub async fn create_incremental_backup(
         &self,
         index: &HybridIndex,
@@ -689,17 +722,17 @@ impl BackupManager {
     ) -> Result<BackupResult, MaintenanceError> {
         // Count vectors newer than 'since'
         let timestamps = index.timestamps.read().await;
-        let new_vectors = timestamps.values()
-            .filter(|ts| **ts > since)
-            .count();
-        
+        let new_vectors = timestamps.values().filter(|ts| **ts > since).count();
+
         let backup_size = new_vectors * 50; // Estimate
-        
+
         // Store incremental backup
         let metadata = format!("incr_backup_{}", new_vectors);
-        self.storage.put(incr_path, metadata.as_bytes().to_vec()).await
+        self.storage
+            .put(incr_path, metadata.as_bytes().to_vec())
+            .await
             .map_err(|e| MaintenanceError::Storage(e.to_string()))?;
-        
+
         Ok(BackupResult {
             backup_size,
             vectors_backed_up: new_vectors,
@@ -707,31 +740,34 @@ impl BackupManager {
             duration: Duration::from_millis(100),
         })
     }
-    
+
     pub async fn get_backup_info(&self, path: &str) -> Result<BackupInfo, MaintenanceError> {
-        let data = self.storage.get(path).await
+        let data = self
+            .storage
+            .get(path)
+            .await
             .map_err(|e| MaintenanceError::Storage(e.to_string()))?;
-        
+
         if let Some(data) = data {
             let metadata = String::from_utf8_lossy(&data);
-        let vector_count = metadata
-            .split('_')
-            .last()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(0);
-        
-        Ok(BackupInfo {
-            path: path.to_string(),
-            created_at: Utc::now(),
-            total_size: data.len(),
-            vector_count,
-            is_incremental: path.contains("incr"),
-        })
+            let vector_count = metadata
+                .split('_')
+                .last()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+
+            Ok(BackupInfo {
+                path: path.to_string(),
+                created_at: Utc::now(),
+                total_size: data.len(),
+                vector_count,
+                is_incremental: path.contains("incr"),
+            })
         } else {
             Err(MaintenanceError::Storage("Backup not found".to_string()))
         }
     }
-    
+
     pub async fn restore_to_point_in_time(
         &self,
         _index: &mut HybridIndex,
@@ -740,7 +776,7 @@ impl BackupManager {
     ) -> Result<RestoreResult, MaintenanceError> {
         // Find appropriate backups
         let mut vectors_restored = 0;
-        
+
         // Simulate restoration from multiple backups
         for i in 0..3 {
             let backup_path = format!("{}/time_{}", backup_dir, i);
@@ -750,7 +786,7 @@ impl BackupManager {
                 }
             }
         }
-        
+
         Ok(RestoreResult {
             vectors_restored,
             duration: Duration::from_millis(500),
@@ -773,34 +809,37 @@ impl HealthMonitor {
             alert_handler: Arc::new(RwLock::new(None)),
         }
     }
-    
+
     pub async fn configure_alerts(&self, config: AlertConfig) {
         let mut current = self.config.write().await;
         *current = config;
     }
-    
+
     pub async fn set_alert_handler<F>(&self, handler: F)
     where
-        F: Fn(Alert) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync + 'static,
+        F: Fn(Alert) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            + Send
+            + Sync
+            + 'static,
     {
         let mut current = self.alert_handler.write().await;
         *current = Some(Box::new(handler));
     }
-    
+
     pub async fn check_health(&self) -> Result<HealthReport, MaintenanceError> {
         let stats = self.index.get_statistics().await;
         let config = self.config.read().await;
-        
+
         let mut issues = Vec::new();
         let mut status = HealthStatus::Healthy;
-        
+
         // Check migration backlog
         let migration_backlog = stats.recent_vectors; // Simplified
         if migration_backlog > config.migration_backlog_threshold {
             issues.push(format!("High migration backlog: {}", migration_backlog));
             status = HealthStatus::Warning;
         }
-        
+
         // Check memory usage
         let memory_usage = stats.recent_index_memory + stats.historical_index_memory;
         let memory_ok = memory_usage < config.memory_usage_threshold_bytes;
@@ -808,7 +847,7 @@ impl HealthMonitor {
             issues.push("Memory usage exceeds threshold".to_string());
             status = HealthStatus::Warning;
         }
-        
+
         Ok(HealthReport {
             status,
             recent_index_ok: true,
@@ -819,7 +858,7 @@ impl HealthMonitor {
             issues,
         })
     }
-    
+
     pub async fn get_recent_alerts(&self) -> Vec<Alert> {
         self.alerts.read().await.clone()
     }

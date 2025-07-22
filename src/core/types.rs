@@ -1,7 +1,7 @@
 use blake3;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct VectorId([u8; 32]);
@@ -72,10 +72,16 @@ impl Embedding {
 
     pub fn cosine_similarity(&self, other: &Self) -> f32 {
         if self.dimension() != other.dimension() {
-            panic!("Dimension mismatch: {} != {}", self.dimension(), other.dimension());
+            panic!(
+                "Dimension mismatch: {} != {}",
+                self.dimension(),
+                other.dimension()
+            );
         }
 
-        let dot_product: f32 = self.data.iter()
+        let dot_product: f32 = self
+            .data
+            .iter()
             .zip(other.data.iter())
             .map(|(a, b)| a * b)
             .sum();
@@ -92,10 +98,15 @@ impl Embedding {
 
     pub fn euclidean_distance(&self, other: &Self) -> f32 {
         if self.dimension() != other.dimension() {
-            panic!("Dimension mismatch: {} != {}", self.dimension(), other.dimension());
+            panic!(
+                "Dimension mismatch: {} != {}",
+                self.dimension(),
+                other.dimension()
+            );
         }
 
-        self.data.iter()
+        self.data
+            .iter()
             .zip(other.data.iter())
             .map(|(a, b)| (a - b) * (a - b))
             .sum::<f32>()
@@ -158,18 +169,18 @@ impl SearchResult {
 
     pub fn deduplicate(mut results: Vec<SearchResult>) -> Vec<SearchResult> {
         use std::collections::HashMap;
-        
+
         let mut best_scores: HashMap<VectorId, SearchResult> = HashMap::new();
-        
+
         for result in results.drain(..) {
             match best_scores.get(&result.vector_id) {
-                Some(existing) if existing.distance <= result.distance => {},
+                Some(existing) if existing.distance <= result.distance => {}
                 _ => {
                     best_scores.insert(result.vector_id.clone(), result);
                 }
             }
         }
-        
+
         let mut deduped: Vec<SearchResult> = best_scores.into_values().collect();
         deduped.sort();
         deduped
@@ -184,7 +195,9 @@ impl PartialOrd for SearchResult {
 
 impl Ord for SearchResult {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.distance.partial_cmp(&other.distance).unwrap_or(std::cmp::Ordering::Equal)
+        self.distance
+            .partial_cmp(&other.distance)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 

@@ -1,20 +1,20 @@
-use crate::core::types::{VectorId, SearchResult};
-use std::collections::{HashMap, HashSet, BinaryHeap};
-use std::cmp::Ordering;
-use std::sync::{Arc, RwLock};
-use rand::{Rng, SeedableRng};
+use crate::core::types::{SearchResult, VectorId};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Error, Clone)]
 pub enum HNSWError {
     #[error("Vector with ID {0:?} already exists")]
     DuplicateVector(VectorId),
-    
+
     #[error("Vector not found: {0:?}")]
     VectorNotFound(VectorId),
-    
+
     #[error("Invalid dimension: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
 }
@@ -58,53 +58,51 @@ impl HNSWNode {
             is_deleted: false,
         }
     }
-    
+
     pub fn id(&self) -> &VectorId {
         &self.id
     }
-    
+
     pub fn vector(&self) -> &Vec<f32> {
         &self.vector
     }
-    
+
     pub fn level(&self) -> usize {
         self.level
     }
-    
+
     pub fn neighbors(&self, layer: usize) -> &HashSet<VectorId> {
         &self.neighbors[layer]
     }
-    
+
     pub fn neighbors_mut(&mut self, layer: usize) -> &mut HashSet<VectorId> {
         &mut self.neighbors[layer]
     }
-    
+
     pub fn set_level(&mut self, level: usize) {
         self.level = level;
         self.neighbors.resize(level + 1, HashSet::new());
     }
-    
+
     pub fn add_neighbor(&mut self, layer: usize, neighbor: VectorId) {
         if layer >= self.neighbors.len() {
             self.neighbors.resize(layer + 1, HashSet::new());
         }
         self.neighbors[layer].insert(neighbor);
     }
-    
+
     pub fn to_cbor(&self) -> Result<Vec<u8>, String> {
-        serde_cbor::to_vec(self)
-            .map_err(|e| e.to_string())
+        serde_cbor::to_vec(self).map_err(|e| e.to_string())
     }
-    
+
     pub fn from_cbor(data: &[u8]) -> Result<Self, String> {
-        serde_cbor::from_slice(data)
-            .map_err(|e| e.to_string())
+        serde_cbor::from_slice(data).map_err(|e| e.to_string())
     }
-    
+
     pub fn is_deleted(&self) -> bool {
         self.is_deleted
     }
-    
+
     pub fn mark_deleted(&mut self) {
         self.is_deleted = true;
     }
@@ -145,7 +143,7 @@ impl HNSWIndex {
             Some(seed) => StdRng::seed_from_u64(seed),
             None => StdRng::from_entropy(),
         };
-        
+
         Self {
             config,
             nodes: Arc::new(RwLock::new(HashMap::new())),
@@ -154,44 +152,44 @@ impl HNSWIndex {
             dimension: Arc::new(RwLock::new(None)),
         }
     }
-    
+
     pub fn config(&self) -> &HNSWConfig {
         &self.config
     }
-    
+
     pub fn node_count(&self) -> usize {
         self.nodes.read().unwrap().len()
     }
-    
+
     pub fn entry_point(&self) -> Option<VectorId> {
         self.entry_point.read().unwrap().clone()
     }
-    
+
     pub fn get_node(&self, id: &VectorId) -> Option<HNSWNode> {
         self.nodes.read().unwrap().get(id).cloned()
     }
-    
+
     pub fn assign_level(&self) -> usize {
         let mut rng = self.rng.write().unwrap();
-        
+
         // HNSW level assignment with adjusted probability
         // Use p = 0.408 to get ~59.2% at level 0 and ratios around 2.0-2.5
         let p = 0.408;
-        
+
         let mut level = 0;
         while rng.gen::<f64>() < p {
             level += 1;
         }
-        
+
         level
     }
-    
+
     pub fn insert(&mut self, id: VectorId, vector: Vec<f32>) -> Result<(), HNSWError> {
         // Check if vector already exists
         if self.nodes.read().unwrap().contains_key(&id) {
             return Err(HNSWError::DuplicateVector(id));
         }
-        
+
         // Check/set dimension
         {
             let mut dim_guard = self.dimension.write().unwrap();
@@ -206,11 +204,11 @@ impl HNSWIndex {
                 _ => {}
             }
         }
-        
+
         let level = self.assign_level();
         let mut node = HNSWNode::new(id.clone(), vector);
         node.set_level(level);
-        
+
         // If this is the first node, set it as entry point
         let is_first = {
             let mut ep_guard = self.entry_point.write().unwrap();
@@ -221,30 +219,37 @@ impl HNSWIndex {
                 false
             }
         };
-        
+
         let entry_level = if !is_first {
             // Find nearest neighbors at all layers
             let entry_point = self.entry_point().unwrap();
             let ef = self.config.ef_construction;
-            
+
             // Search for nearest neighbors starting from top layer of entry point
-            let entry_node = self.nodes.read().unwrap().get(&entry_point).unwrap().clone();
+            let entry_node = self
+                .nodes
+                .read()
+                .unwrap()
+                .get(&entry_point)
+                .unwrap()
+                .clone();
             let entry_level = entry_node.level();
-            
+
             let mut current_nearest = vec![SearchCandidate {
                 id: entry_point.clone(),
                 distance: euclidean_distance(&node.vector, &entry_node.vector),
             }];
-            
+
             // Search from the minimum of the new node's level and entry point's level
             let search_level = level.min(entry_level);
             for lc in (0..=search_level).rev() {
-                let candidates = self.search_layer(&node.vector, current_nearest[0].id.clone(), 1, lc);
+                let candidates =
+                    self.search_layer(&node.vector, current_nearest[0].id.clone(), 1, lc);
                 if !candidates.is_empty() {
                     current_nearest = candidates;
                 }
             }
-            
+
             // Connect to neighbors at each layer
             for lc in 0..=level {
                 let m = if lc == 0 {
@@ -252,35 +257,40 @@ impl HNSWIndex {
                 } else {
                     self.config.max_connections
                 };
-                
+
                 let candidates = self.search_layer(&node.vector, entry_point.clone(), ef, lc);
                 let neighbors = self.select_neighbors(&candidates, m);
-                
+
                 // Add bidirectional connections
                 {
                     let mut nodes_guard = self.nodes.write().unwrap();
-                    
+
                     // Add neighbors to new node
                     for neighbor_id in &neighbors {
                         node.neighbors_mut(lc).insert(neighbor_id.clone());
                     }
-                    
+
                     // Add new node to neighbors
                     for neighbor_id in &neighbors {
                         if let Some(neighbor) = nodes_guard.get_mut(neighbor_id) {
                             if neighbor.level >= lc {
                                 neighbor.neighbors_mut(lc).insert(id.clone());
-                                
+
                                 // Prune neighbors if exceeded limit
                                 let max_conn = if lc == 0 {
                                     self.config.max_connections_layer_0
                                 } else {
                                     self.config.max_connections
                                 };
-                                
+
                                 if neighbor.neighbors(lc).len() > max_conn {
-                                    let neighbor_neighbors: Vec<_> = neighbor.neighbors(lc).iter().cloned().collect();
-                                    let pruned = self.prune_neighbors(&neighbor_neighbors, neighbor.vector(), max_conn);
+                                    let neighbor_neighbors: Vec<_> =
+                                        neighbor.neighbors(lc).iter().cloned().collect();
+                                    let pruned = self.prune_neighbors(
+                                        &neighbor_neighbors,
+                                        neighbor.vector(),
+                                        max_conn,
+                                    );
                                     neighbor.neighbors_mut(lc).clear();
                                     for n in pruned {
                                         neighbor.neighbors_mut(lc).insert(n);
@@ -291,29 +301,34 @@ impl HNSWIndex {
                     }
                 }
             }
-            
+
             entry_level
         } else {
             0
         };
-        
+
         // Insert node
         self.nodes.write().unwrap().insert(id.clone(), node);
-        
+
         // Update entry point if new node has higher level
         if !is_first && level > entry_level {
             *self.entry_point.write().unwrap() = Some(id);
         }
-        
+
         Ok(())
     }
-    
-    pub fn search(&self, query: &[f32], k: usize, ef: usize) -> Result<Vec<SearchResult>, HNSWError> {
+
+    pub fn search(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+    ) -> Result<Vec<SearchResult>, HNSWError> {
         let entry_point = match self.entry_point() {
             Some(ep) => ep,
             None => return Ok(Vec::new()), // Empty index
         };
-        
+
         // Check dimension
         if let Some(dim) = *self.dimension.read().unwrap() {
             if query.len() != dim {
@@ -323,44 +338,56 @@ impl HNSWIndex {
                 });
             }
         }
-        
+
         // Start from top layer of entry point
         let nodes = self.nodes.read().unwrap();
         let entry_node = nodes.get(&entry_point).unwrap();
         let top_layer = entry_node.level();
-        
+
         let mut nearest = vec![SearchCandidate {
             id: entry_point.clone(),
             distance: euclidean_distance(query, &entry_node.vector),
         }];
-        
+
         // Search through layers from top to layer 0
         for lc in (0..=top_layer).rev() {
-            let new_nearest = self.search_layer(query, nearest[0].id.clone(), if lc == 0 { ef } else { 1 }, lc);
+            let new_nearest = self.search_layer(
+                query,
+                nearest[0].id.clone(),
+                if lc == 0 { ef } else { 1 },
+                lc,
+            );
             if !new_nearest.is_empty() {
                 nearest = new_nearest;
             }
         }
-        
+
         // Return top k results
         nearest.truncate(k);
-        Ok(nearest.into_iter()
+        Ok(nearest
+            .into_iter()
             .map(|c| SearchResult::new(c.id, c.distance, None))
             .collect())
     }
-    
-    fn search_layer(&self, query: &[f32], entry_point: VectorId, ef: usize, layer: usize) -> Vec<SearchCandidate> {
+
+    fn search_layer(
+        &self,
+        query: &[f32],
+        entry_point: VectorId,
+        ef: usize,
+        layer: usize,
+    ) -> Vec<SearchCandidate> {
         let nodes = self.nodes.read().unwrap();
-        
+
         // Check if entry point exists
         if !nodes.contains_key(&entry_point) {
             return Vec::new();
         }
-        
+
         let mut visited = HashSet::new();
         let mut candidates = BinaryHeap::new();
         let mut nearest = BinaryHeap::new();
-        
+
         let entry_distance = euclidean_distance(query, &nodes[&entry_point].vector);
         candidates.push(SearchCandidate {
             id: entry_point.clone(),
@@ -371,27 +398,29 @@ impl HNSWIndex {
             distance: -entry_distance, // Negative for max-heap
         });
         visited.insert(entry_point);
-        
+
         while let Some(current) = candidates.pop() {
             if current.distance > -nearest.peek().unwrap().distance {
                 break;
             }
-            
+
             if let Some(node) = nodes.get(&current.id) {
                 if node.level() >= layer {
                     for neighbor_id in node.neighbors(layer) {
                         if !visited.contains(neighbor_id) {
                             visited.insert(neighbor_id.clone());
-                            
+
                             if let Some(neighbor) = nodes.get(neighbor_id) {
                                 // Skip deleted nodes
                                 if neighbor.is_deleted() {
                                     continue;
                                 }
-                                
+
                                 let distance = euclidean_distance(query, &neighbor.vector);
-                                
-                                if distance < -nearest.peek().unwrap().distance || nearest.len() < ef {
+
+                                if distance < -nearest.peek().unwrap().distance
+                                    || nearest.len() < ef
+                                {
                                     candidates.push(SearchCandidate {
                                         id: neighbor_id.clone(),
                                         distance,
@@ -400,7 +429,7 @@ impl HNSWIndex {
                                         id: neighbor_id.clone(),
                                         distance: -distance,
                                     });
-                                    
+
                                     if nearest.len() > ef {
                                         nearest.pop();
                                     }
@@ -411,28 +440,36 @@ impl HNSWIndex {
                 }
             }
         }
-        
+
         // Convert back to min-heap order
-        let mut result: Vec<_> = nearest.into_iter()
+        let mut result: Vec<_> = nearest
+            .into_iter()
             .map(|c| SearchCandidate {
                 id: c.id,
                 distance: -c.distance,
             })
             .collect();
-        result.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        result.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(Ordering::Equal)
+        });
         result
     }
-    
+
     fn select_neighbors(&self, candidates: &[SearchCandidate], m: usize) -> Vec<VectorId> {
-        candidates.iter()
-            .take(m)
-            .map(|c| c.id.clone())
-            .collect()
+        candidates.iter().take(m).map(|c| c.id.clone()).collect()
     }
-    
-    fn prune_neighbors(&self, neighbors: &[VectorId], base_vector: &[f32], m: usize) -> Vec<VectorId> {
+
+    fn prune_neighbors(
+        &self,
+        neighbors: &[VectorId],
+        base_vector: &[f32],
+        m: usize,
+    ) -> Vec<VectorId> {
         let nodes = self.nodes.read().unwrap();
-        let mut candidates: Vec<_> = neighbors.iter()
+        let mut candidates: Vec<_> = neighbors
+            .iter()
             .filter_map(|id| {
                 nodes.get(id).map(|node| SearchCandidate {
                     id: id.clone(),
@@ -440,16 +477,20 @@ impl HNSWIndex {
                 })
             })
             .collect();
-        
-        candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+
+        candidates.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(Ordering::Equal)
+        });
         candidates.truncate(m);
         candidates.into_iter().map(|c| c.id).collect()
     }
-    
+
     pub fn get_all_nodes(&self) -> Vec<HNSWNode> {
         self.nodes.read().unwrap().values().cloned().collect()
     }
-    
+
     pub fn restore_node(&mut self, node: HNSWNode) -> Result<(), HNSWError> {
         // Set dimension if not set
         if let Ok(mut dim_guard) = self.dimension.write() {
@@ -457,16 +498,16 @@ impl HNSWIndex {
                 *dim_guard = Some(node.vector().len());
             }
         }
-        
+
         let id = node.id().clone();
         self.nodes.write().unwrap().insert(id, node);
         Ok(())
     }
-    
+
     pub fn set_entry_point(&mut self, id: VectorId) {
         *self.entry_point.write().unwrap() = Some(id);
     }
-    
+
     pub fn get_node_index(&self, id: &VectorId) -> Option<usize> {
         // For now, return a simple hash-based index
         // In production, this would map to actual storage indices
@@ -477,11 +518,11 @@ impl HNSWIndex {
             Hasher::finish(&hasher) as usize
         })
     }
-    
+
     pub fn dimension(&self) -> Option<usize> {
         *self.dimension.read().unwrap()
     }
-    
+
     pub fn nodes(&self) -> &Arc<RwLock<HashMap<VectorId, HNSWNode>>> {
         &self.nodes
     }
