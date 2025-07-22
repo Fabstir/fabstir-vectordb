@@ -156,6 +156,7 @@ impl Default for HybridSearchConfig {
 
 pub type SearchConfig = HybridSearchConfig;
 
+#[derive(Clone)]
 pub struct HybridIndex {
     config: HybridConfig,
     recent_index: Arc<RwLock<HNSWIndex>>,

@@ -12,7 +12,7 @@ Decentralised AI vector database built on S5 storage with hybrid HNSW/IVF indexi
 - ✅ Phase 1: Core Infrastructure (100%) - Completed 2025-07-22
 - 🔧 Phase 2: HNSW Index (82%) - In Progress
 - ✅ Phase 3: IVF Index (100%) - Completed 2025-07-22
-- 🔧 Phase 4: Hybrid Time-Based Index (25%) - In Progress
+- 🔧 Phase 4: Hybrid Time-Based Index (50%) - In Progress
 - ⏳ Phase 5: API & Integration (0%)
 - ⏳ Phase 6: Performance & Optimisation (0%)
 
@@ -127,12 +127,12 @@ Foundation types, S5 integration, and vector operations.
   - [x] Create migration scheduler
   - [x] Add configuration system
 
-- [ ] **4.2 Search Integration**
+- [x] **4.2 Search Integration** ✅ 2025-07-22
 
-  - [ ] Parallel search execution
-  - [ ] Result merging with deduplication
-  - [ ] Relevance scoring
-  - [ ] Query optimisation
+  - [x] Parallel search execution
+  - [x] Result merging with deduplication
+  - [x] Relevance scoring
+  - [x] Query optimisation
 
 - [ ] **4.3 Maintenance Operations**
   - [ ] Automated migration tasks
@@ -307,4 +307,34 @@ Each phase follows TDD with:
   - Configurable migration thresholds
   - Memory and performance tracking
   - Thread-safe async implementation
+
+**Phase 4.2 Search Integration (100% complete)**
+- Implemented ParallelSearchConfig and parallel_search method
+- Created ResultMerger with multiple merge strategies:
+  - TakeBest: Selects highest scoring result for duplicates
+  - Average: Averages scores for duplicate vectors
+  - Weighted: Applies weighted average based on source weights
+- Implemented RelevanceScorer with scoring methods:
+  - CosineSimilarity with metadata boost support
+  - TimeDecay for temporal relevance
+  - PopularityBoost based on view counts
+  - Combined scoring with weighted methods
+- Created QueryOptimizer for adaptive search:
+  - Analyzes index statistics to optimize queries
+  - Suggests search parameters based on k and dataset size
+  - Implements query expansion for improved recall
+- Added SearchPerformanceMonitor:
+  - Tracks search latency and result counts
+  - Calculates p50/p99 percentiles
+  - Provides average performance metrics
+- Implemented CachedHybridIndex:
+  - Query result caching with configurable size
+  - Cache hit/miss tracking
+  - Simple FIFO eviction strategy
+- All 13 tests passing (1 ignored due to HNSW performance)
+- Key features:
+  - Non-blocking parallel search across indices
+  - Configurable timeout handling
+  - Weight-based result scoring
+  - Comprehensive performance monitoring
 ```
