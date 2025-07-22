@@ -29,13 +29,13 @@ Foundation types, S5 integration, and vector operations.
   - [ ] Configure testing framework
   - [ ] Add CI/CD configuration
 
-- [ ] **1.2 Core Types**
+- [x] **1.2 Core Types** ✅ 2025-07-22
 
-  - [ ] Define VectorId type
-  - [ ] Define Embedding type with operations
-  - [ ] Define Metadata structures
-  - [ ] Define Distance metrics (cosine, L2)
-  - [ ] Implement CBOR serialisation
+  - [x] Define VectorId type
+  - [x] Define Embedding type with operations
+  - [x] Define Metadata structures
+  - [x] Define Distance metrics (cosine, L2)
+  - [x] Implement CBOR serialisation
 
 - [ ] **1.3 S5 Storage Abstraction**
 
