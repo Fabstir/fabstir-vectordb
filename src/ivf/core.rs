@@ -97,9 +97,9 @@ pub struct TrainResult {
     pub final_error: f32,
 }
 
-#[derive(Debug)]
-struct InvertedList {
-    vectors: HashMap<VectorId, Vec<f32>>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvertedList {
+    pub vectors: HashMap<VectorId, Vec<f32>>,
 }
 
 impl InvertedList {
@@ -395,6 +395,35 @@ impl IVFIndex {
         }
         
         Ok(self.find_nearest_centroid(vector))
+    }
+    
+    pub fn get_inverted_list(&self, cluster_id: ClusterId) -> Option<&InvertedList> {
+        self.inverted_lists.get(&cluster_id)
+    }
+    
+    pub fn get_all_inverted_lists(&self) -> &HashMap<ClusterId, InvertedList> {
+        &self.inverted_lists
+    }
+    
+    pub fn set_trained(&mut self, centroids: Vec<Centroid>, dimension: usize) {
+        self.centroids = centroids;
+        self.dimension = Some(dimension);
+        self.trained = true;
+        
+        // Initialize empty inverted lists for each centroid
+        self.inverted_lists.clear();
+        for i in 0..self.config.n_clusters {
+            self.inverted_lists.insert(ClusterId(i), InvertedList::new());
+        }
+    }
+    
+    pub fn set_inverted_lists(&mut self, inverted_lists: HashMap<ClusterId, InvertedList>) {
+        // Update total_vectors count before moving
+        self.total_vectors = inverted_lists.values()
+            .map(|list| list.len())
+            .sum();
+        
+        self.inverted_lists = inverted_lists;
     }
     
     pub fn get_cluster_size(&self, cluster_id: ClusterId) -> usize {
