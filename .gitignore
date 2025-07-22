@@ -1,0 +1,79 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# IDE - IntelliJ/CLion/RustRover
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS - Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# OS - macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# OS - Linux
+*~
+.directory
+.Trash-*
+
+# Temporary files
+*.swp
+*.swo
+*.tmp
+*.temp
+*.log
+tmp/
+temp/
+
+# Test coverage
+tarpaulin-report.html
+cobertura.xml
+coverage/
+*.profraw
+
+# Benchmarking
+/target/criterion/
+
+# Documentation
+/target/doc/
+
+# Backup files
+*.bak
+*.backup
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python (for future bindings)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# Node (for WASM builds)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/

@@ -1,0 +1,45 @@
+[package]
+name = "vector-db"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core dependencies
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.11"
+serde_json = "1.0"
+blake3 = "1.5"
+chrono = { version = "0.4", features = ["serde"] }
+
+# S5 client
+# You'll need to add the actual S5 client dependency
+
+# Math and SIMD
+nalgebra = "0.32"
+simdeez = { version = "1.0", optional = true }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+tracing = "0.1"
+dashmap = "5.5"
+hex = "0.4"
+
+[dev-dependencies]
+proptest = "1.4"
+approx = "0.5"
+criterion = "0.5"
+tempfile = "3.8"
+
+[features]
+default = []
+simd = ["simdeez"]
+
+[[bench]]
+name = "vector_ops"
+harness = false
