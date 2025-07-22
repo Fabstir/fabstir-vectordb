@@ -77,3 +77,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 dist/
+
+# WASM bindings
+bindings/wasm/pkg/
+bindings/wasm/target/
+bindings/wasm/Cargo.lock
+
+# JavaScript/TypeScript client
+bindings/js/node_modules/
+bindings/js/dist/
+bindings/js/lib/
+bindings/js/*.tgz

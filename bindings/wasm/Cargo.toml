@@ -1,0 +1,36 @@
+[package]
+name = "vector-db-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6"
+wee_alloc = "0.4"
+console_error_panic_hook = { version = "0.1", optional = true }
+getrandom = { version = "0.2", features = ["js"] }
+
+# Math
+nalgebra = "0.32"
+
+# For serialization
+bincode = "1.3"
+
+# Note: We don't depend on the main vector-db crate because it uses tokio,
+# which is not compatible with WASM. These bindings are standalone.
+
+[features]
+default = ["console_error_panic_hook"]
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Enable Link Time Optimization
+codegen-units = 1   # Single codegen unit for better optimization
