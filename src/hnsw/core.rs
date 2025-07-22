@@ -5,6 +5,7 @@ use std::sync::{Arc, RwLock};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use thiserror::Error;
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Error)]
 pub enum HNSWError {
@@ -18,7 +19,7 @@ pub enum HNSWError {
     DimensionMismatch { expected: usize, actual: usize },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HNSWConfig {
     pub max_connections: usize,
     pub max_connections_layer_0: usize,
@@ -37,7 +38,7 @@ impl Default for HNSWConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWNode {
     id: VectorId,
     vector: Vec<f32>,
@@ -78,6 +79,23 @@ impl HNSWNode {
     pub fn set_level(&mut self, level: usize) {
         self.level = level;
         self.neighbors.resize(level + 1, HashSet::new());
+    }
+    
+    pub fn add_neighbor(&mut self, layer: usize, neighbor: VectorId) {
+        if layer >= self.neighbors.len() {
+            self.neighbors.resize(layer + 1, HashSet::new());
+        }
+        self.neighbors[layer].insert(neighbor);
+    }
+    
+    pub fn to_cbor(&self) -> Result<Vec<u8>, String> {
+        serde_cbor::to_vec(self)
+            .map_err(|e| e.to_string())
+    }
+    
+    pub fn from_cbor(data: &[u8]) -> Result<Self, String> {
+        serde_cbor::from_slice(data)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -410,6 +428,42 @@ impl HNSWIndex {
         candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
         candidates.truncate(m);
         candidates.into_iter().map(|c| c.id).collect()
+    }
+    
+    pub fn get_all_nodes(&self) -> Vec<HNSWNode> {
+        self.nodes.read().unwrap().values().cloned().collect()
+    }
+    
+    pub fn restore_node(&mut self, node: HNSWNode) -> Result<(), HNSWError> {
+        // Set dimension if not set
+        if let Ok(mut dim_guard) = self.dimension.write() {
+            if dim_guard.is_none() {
+                *dim_guard = Some(node.vector().len());
+            }
+        }
+        
+        let id = node.id().clone();
+        self.nodes.write().unwrap().insert(id, node);
+        Ok(())
+    }
+    
+    pub fn set_entry_point(&mut self, id: VectorId) {
+        *self.entry_point.write().unwrap() = Some(id);
+    }
+    
+    pub fn get_node_index(&self, id: &VectorId) -> Option<usize> {
+        // For now, return a simple hash-based index
+        // In production, this would map to actual storage indices
+        self.nodes.read().unwrap().get(id).map(|_| {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            Hash::hash(id, &mut hasher);
+            Hasher::finish(&hasher) as usize
+        })
+    }
+    
+    pub fn dimension(&self) -> Option<usize> {
+        *self.dimension.read().unwrap()
     }
 }
 

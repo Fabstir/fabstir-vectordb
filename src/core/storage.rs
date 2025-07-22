@@ -624,6 +624,7 @@ impl<T: S5Storage + 'static> S5Storage for BatchS5Storage<T> {
 }
 
 // Mock S5 storage for testing
+#[derive(Clone)]
 pub struct MockS5Storage {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
     call_count: Arc<RwLock<HashMap<String, usize>>>,
