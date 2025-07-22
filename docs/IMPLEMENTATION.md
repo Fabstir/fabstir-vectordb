@@ -142,12 +142,12 @@ Foundation types, S5 integration, and vector operations.
 
 ### Phase 5: API & Integration (Week 5)
 
-- [ ] **5.1 REST API**
+- [x] **5.1 REST API** ✅ 2025-07-22
 
-  - [ ] Vector upload endpoint
-  - [ ] Search endpoint
-  - [ ] Batch operations
-  - [ ] Health/stats endpoints
+  - [x] Vector upload endpoint
+  - [x] Search endpoint
+  - [x] Batch operations
+  - [x] Health/stats endpoints
 
 - [ ] **5.2 Client Libraries**
 
@@ -367,4 +367,30 @@ Each phase follows TDD with:
   - Comprehensive backup and restore
   - Health monitoring and alerting
   - Production-ready maintenance tools
+
+**Phase 5.1 REST API (100% complete)**
+- Implemented REST API with Axum framework:
+  - ApiConfig for server configuration with CORS and timeout settings
+  - Health check endpoint with index status reporting
+  - Vector CRUD operations (POST /vectors, GET /vectors/:id, DELETE /vectors/:id)
+  - Batch insert endpoint (POST /vectors/batch)
+  - Search endpoint with filters and configuration options (POST /search)
+  - Admin endpoints for statistics, migration, rebalancing, and backup
+  - SSE streaming endpoint for real-time updates (/stream/updates)
+  - WebSocket support for bidirectional communication
+- Added comprehensive middleware:
+  - CORS support with configurable origins
+  - Request body size limiting
+  - Proper error handling and response formatting
+- All 17 tests passing:
+  - Server initialization and configuration
+  - Vector operations (insert, get, delete, batch)
+  - Search functionality with various options
+  - Admin operations
+  - Streaming updates
+- Key features:
+  - Type-safe request/response handling with serde
+  - Async handlers leveraging tokio runtime
+  - Integration with HybridIndex for all operations
+  - Production-ready error responses with proper HTTP status codes
 ```

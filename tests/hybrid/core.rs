@@ -3,8 +3,8 @@ use vector_db::hnsw::core::{HNSWConfig, HNSWIndex};
 use vector_db::ivf::core::{IVFConfig, IVFIndex};
 use vector_db::core::types::*;
 use vector_db::core::storage::*;
-use std::time::Duration;
-use chrono::{Utc, TimeZone};
+use std::time::{Duration, SystemTime};
+use chrono::Utc;
 use tokio;
 
 #[cfg(test)]
@@ -58,7 +58,10 @@ mod hybrid_structure_tests {
         
         assert_eq!(tv.id(), &id);
         assert_eq!(tv.vector(), &vector);
-        assert_eq!(tv.timestamp(), timestamp.into());
+        // Compare timestamps by converting both to SystemTime
+        let tv_time: SystemTime = tv.timestamp();
+        let expected_time: SystemTime = timestamp.into();
+        assert_eq!(tv_time, expected_time);
         assert!(tv.is_recent(Duration::from_secs(60))); // Recent within 1 minute
     }
 }
