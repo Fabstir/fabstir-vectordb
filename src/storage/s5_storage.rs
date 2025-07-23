@@ -3,10 +3,10 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use sha2::{Sha256, Digest};
 use chrono::Utc;
 
 use crate::core::storage::{S5Storage as Storage, StorageError};
+use crate::storage::s5_client::S5Client;
 
 #[derive(Debug, Clone)]
 pub struct S5Config {
@@ -38,26 +38,25 @@ pub struct StorageMetadata {
 
 pub struct S5Storage {
     config: S5Config,
-    // Mock storage - replace with S5Client later
-    storage: Arc<RwLock<HashMap<String, Vec<u8>>>>,
-    cid_map: Arc<RwLock<HashMap<String, String>>>,
+    client: S5Client,
+    cid_map: Arc<RwLock<HashMap<String, String>>>, // Keep for key->CID mapping
     metadata_map: Arc<RwLock<HashMap<String, StorageMetadata>>>,
 }
 
 impl S5Storage {
     pub fn new(config: S5Config) -> Self {
+        let client = S5Client::new(config.clone());
         Self {
             config,
-            storage: Arc::new(RwLock::new(HashMap::new())),
+            client,
             cid_map: Arc::new(RwLock::new(HashMap::new())),
             metadata_map: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     pub async fn is_connected(&self) -> bool {
-        // For now, always return true (mock)
-        // Later: check if we're connected to an invalid URL
-        !self.config.node_url.contains("invalid-url")
+        // Check if we can connect to the S5 node
+        self.client.health_check().await.is_ok()
     }
 
     pub async fn get_cid(&self, key: &str) -> Result<String> {
@@ -73,30 +72,32 @@ impl S5Storage {
             return Err(anyhow::anyhow!("Invalid CID format: {}", cid));
         }
 
-        // Find the key for this CID
+        // Download data from S5 using CID
+        let data = self.client.download_data(cid).await?;
+        
+        // Check if data is compressed by looking up metadata
         let cid_map = self.cid_map.read().await;
-        let key = cid_map.iter()
-            .find(|(_, v)| v.as_str() == cid)
-            .map(|(k, _)| k.clone())
-            .ok_or_else(|| anyhow::anyhow!("Data not found for CID: {}", cid))?;
-
-        // Get the data
-        let storage = self.storage.read().await;
-        storage.get(&key)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Data not found for CID: {}", cid))
+        if let Some((key, _)) = cid_map.iter().find(|(_, v)| v.as_str() == cid) {
+            let metadata_map = self.metadata_map.read().await;
+            if let Some(metadata) = metadata_map.get(key) {
+                if metadata.compressed {
+                    // Decompress
+                    let decompressed = zstd::decode_all(&data[..])
+                        .map_err(|e| anyhow::anyhow!("Decompression failed: {}", e))?;
+                    return Ok(decompressed);
+                }
+            }
+        }
+        
+        Ok(data)
     }
 
     pub async fn put_compressed(&self, key: &str, value: Vec<u8>) -> Result<()> {
         // Compress the data
         let compressed = zstd::encode_all(&value[..], 3)?;
         
-        // Generate CID
-        let cid = generate_mock_cid(&compressed);
-        
-        // Store the compressed data
-        let mut storage = self.storage.write().await;
-        storage.insert(key.to_string(), compressed.clone());
+        // Upload to S5
+        let cid = self.client.upload_data(compressed.clone()).await?;
         
         // Update CID map
         let mut cid_map = self.cid_map.write().await;
@@ -151,43 +152,41 @@ impl S5Storage {
 #[async_trait]
 impl Storage for S5Storage {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
-        // Check for network error simulation
-        if self.config.node_url.contains("invalid-url") {
-            return Err(StorageError::NetworkError("Network error: Failed to connect".to_string()));
-        }
+        // Get CID for the key
+        let cid_map = self.cid_map.read().await;
+        let cid = match cid_map.get(key) {
+            Some(cid) => cid.clone(),
+            None => return Ok(None), // Key doesn't exist
+        };
 
-        let storage = self.storage.read().await;
-        
-        // Check if data exists
-        if let Some(data) = storage.get(key) {
-            // Check if it was compressed
-            let metadata_map = self.metadata_map.read().await;
-            if let Some(metadata) = metadata_map.get(key) {
-                if metadata.compressed {
-                    // Decompress
-                    let decompressed = zstd::decode_all(&data[..])
-                        .map_err(|e| StorageError::SerializationError(format!("Decompression failed: {}", e)))?;
-                    return Ok(Some(decompressed));
+        // Download data from S5
+        let data = self.client.download_data(&cid).await
+            .map_err(|e| {
+                if e.to_string().contains("404") || e.to_string().contains("not found") {
+                    StorageError::NetworkError(format!("Key not found: {}", key))
+                } else {
+                    StorageError::NetworkError(format!("Failed to download: {}", e))
                 }
+            })?;
+
+        // Check if data was compressed
+        let metadata_map = self.metadata_map.read().await;
+        if let Some(metadata) = metadata_map.get(key) {
+            if metadata.compressed {
+                // Decompress
+                let decompressed = zstd::decode_all(&data[..])
+                    .map_err(|e| StorageError::SerializationError(format!("Decompression failed: {}", e)))?;
+                return Ok(Some(decompressed));
             }
-            Ok(Some(data.clone()))
-        } else {
-            Ok(None)
         }
+        
+        Ok(Some(data))
     }
 
     async fn put(&self, key: &str, value: Vec<u8>) -> Result<(), StorageError> {
-        // Check for network error simulation
-        if self.config.node_url.contains("invalid-url") {
-            return Err(StorageError::NetworkError("Network error: Failed to connect".to_string()));
-        }
-
-        // Generate CID
-        let cid = generate_mock_cid(&value);
-        
-        // Store the data
-        let mut storage = self.storage.write().await;
-        storage.insert(key.to_string(), value.clone());
+        // Upload data to S5
+        let cid = self.client.upload_data(value.clone()).await
+            .map_err(|e| StorageError::NetworkError(format!("Upload failed: {}", e)))?;
         
         // Update CID map
         let mut cid_map = self.cid_map.write().await;
@@ -207,9 +206,8 @@ impl Storage for S5Storage {
     }
 
     async fn delete(&self, key: &str) -> Result<(), StorageError> {
-        let mut storage = self.storage.write().await;
-        storage.remove(key);
-        
+        // Note: S5 is immutable, so we can't actually delete data
+        // We just remove from our local maps
         let mut cid_map = self.cid_map.write().await;
         cid_map.remove(key);
         
@@ -220,8 +218,9 @@ impl Storage for S5Storage {
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<String>, StorageError> {
-        let storage = self.storage.read().await;
-        Ok(storage.keys()
+        // List from our local CID map since S5 doesn't have direct key listing
+        let cid_map = self.cid_map.read().await;
+        Ok(cid_map.keys()
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect())
@@ -231,8 +230,8 @@ impl Storage for S5Storage {
 // Helper functions for tests
 impl S5Storage {
     pub async fn exists(&self, key: &str) -> Result<bool> {
-        let storage = self.storage.read().await;
-        Ok(storage.contains_key(key))
+        let cid_map = self.cid_map.read().await;
+        Ok(cid_map.contains_key(key))
     }
     
     pub async fn list_keys(&self, prefix: &str) -> Result<Vec<String>> {
@@ -241,9 +240,3 @@ impl S5Storage {
     }
 }
 
-fn generate_mock_cid(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let hash = hasher.finalize();
-    format!("s5://mock_{}", hex::encode(&hash[..8]))
-}

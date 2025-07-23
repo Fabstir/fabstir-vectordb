@@ -67,6 +67,7 @@ approx = "0.5"
 criterion = "0.5"
 tempfile = "3.8"
 axum-test = "14.0"
+mockito = "1.0"
 
 [features]
 default = []
