@@ -63,8 +63,9 @@ Foundation types, S5 integration, and vector operations.
   - [x] Implement graph construction
   - [x] Add insertion algorithm
   - [x] Create search algorithm
-  
+
   **Notes:**
+
   - 11/14 tests passing
   - Core functionality working (insert, search, neighbor management)
   - Known issues: level assignment test tolerance, some search tests hanging
@@ -76,8 +77,9 @@ Foundation types, S5 integration, and vector operations.
   - [x] Implement graph serialisation
   - [x] Add incremental sync to S5
   - [x] Create recovery mechanisms
-  
+
   **Notes:**
+
   - 8/11 tests passing
   - Chunked storage with configurable chunk size implemented
   - CBOR serialization for nodes and metadata
@@ -85,12 +87,14 @@ Foundation types, S5 integration, and vector operations.
   - 3 tests ignored due to HNSW insertion performance issues from Phase 2.1
 
 - [x] **2.3 HNSW Operations** ✅ 2025-07-22 (~85% complete)
+
   - [x] Batch insertion support
   - [x] Delete operation (mark as deleted)
   - [x] Graph maintenance utilities
   - [x] Memory management
-  
+
   **Notes:**
+
   - Batch operations with progress callback implemented
   - Soft deletion with vacuum support
   - Graph statistics and memory usage tracking
@@ -184,6 +188,73 @@ Foundation types, S5 integration, and vector operations.
   - [ ] Documentation
   - [ ] Deployment guides
 
+## Phase 7: S5 Storage Integration
+
+**Goal**: Replace mock storage with enhanced S5.js for decentralised storage on Sia network
+
+### 7.1 S5 Storage Adapter (Chunk 1 - Mock Implementation Complete)
+
+- [x] Create S5Storage implementation of Storage trait ✅ 2025-07-23
+- [x] Implement CBOR encoding/decoding matching s5-rs format ✅ 2025-07-23
+- [x] Add CID mapping for key-value abstraction ✅ 2025-07-23
+- [x] Handle connection pooling for S5 requests (mock) ✅ 2025-07-23
+- [x] Implement retry logic for network failures (mock) ✅ 2025-07-23
+
+### 7.2 CBOR Compatibility (Chunk 1 - Complete)
+
+- [x] Ensure vector serialisation matches s5-rs comprehensive_vectors.rs ✅ 2025-07-23
+- [x] Validate VideoNFTMetadata encoding matches test_encode.rs outputs ✅ 2025-07-23
+- [x] Test round-trip serialisation/deserialisation ✅ 2025-07-23
+- [ ] Verify binary compatibility with enhanced s5.js (Chunk 3)
+- [x] Support actual video NFT schema with attributes array ✅ 2025-07-23
+
+### 7.3 S5 Client Integration
+
+- [ ] Create Rust wrapper for enhanced s5.js operations
+- [ ] Implement uploadData for vector storage
+- [ ] Implement downloadData for vector retrieval
+- [ ] Add batch upload/download operations
+- [ ] Handle large vector collections (chunking/streaming)
+
+### 7.4 Migration Tools
+
+- [ ] Create migration script from mock to S5 storage
+- [ ] Add storage backend selection (mock/S5) via config
+- [ ] Implement data export/import utilities
+- [ ] Add verification tools for migrated data
+
+### 7.5 Performance Optimisation
+
+- [ ] Add caching layer (Redis) for frequently accessed vectors
+- [x] Implement compression (zstd) for storage efficiency ✅ 2025-07-23
+- [x] Optimise batch operations for S5 network (mock) ✅ 2025-07-23
+- [ ] Add CDN/gateway support for faster retrieval
+
+### 7.6 Testing & Validation
+
+- [x] Unit tests for S5Storage implementation ✅ 2025-07-23
+- [ ] Integration tests with real S5 network (Chunk 3)
+- [ ] Performance benchmarks vs mock storage
+- [x] Stress tests for concurrent operations ✅ 2025-07-23
+- [x] Data integrity verification ✅ 2025-07-23
+
+### Video NFT Metadata Schema
+
+Using actual schema from nfts_data_test_movies.json:
+
+- `address` + `id` form unique identifier
+- `genre` is array of strings
+- `runtime` stored in attributes array
+- `mintDateTime` in ISO 8601 format
+- `type` indicates NFT type (video/audio/image/data)
+
+### Dependencies
+
+- Enhanced s5.js (TypeScript)
+- s5-rs (for CBOR format reference)
+- Redis (optional, for caching)
+- zstd compression library
+
 ## Testing Strategy
 
 Each phase follows TDD with:
@@ -204,13 +275,16 @@ Each phase follows TDD with:
 ## Detailed Progress Log
 
 ### 2025-07-22
+
 **Phase 1 Completed (100%)**
+
 - Implemented all core types with CBOR serialization
 - Created S5 storage abstraction with mock implementation
 - Added advanced vector operations with SIMD, parallel processing, and quantization
 - All 43 Phase 1 tests passing
 
 **Phase 2.1 HNSW Core Structure (~80% complete)**
+
 - Implemented HNSWNode with multi-layer neighbor management
 - Created HNSWIndex with thread-safe operations
 - Added core algorithms: insert, search, assign_level
@@ -221,6 +295,7 @@ Each phase follows TDD with:
   - Need to debug test_search_accuracy, test_ef_parameter_impact, test_multi_layer_structure
 
 **Phase 2.2 HNSW Persistence (~80% complete)**
+
 - Implemented HNSWMetadata struct with version control
 - Created HNSWPersister with full save/load functionality
 - Added chunked storage for large graphs
@@ -232,6 +307,7 @@ Each phase follows TDD with:
   - Tests work correctly but take too long with larger node counts
 
 **Phase 2.3 HNSW Operations (~85% complete)**
+
 - Implemented batch insert with progress callback support
 - Added soft deletion with mark_deleted and vacuum operations
 - Created graph statistics tracking (nodes, edges, degree, connectivity)
@@ -241,6 +317,7 @@ Each phase follows TDD with:
 - Performance issues from Phase 2.1 still affecting tests with >10 nodes
 
 **Phase 3.1 IVF Core Structure (100% complete)**
+
 - Implemented IVFConfig with validation
 - Created ClusterId and Centroid types
 - Implemented IVFIndex with k-means++ initialization
@@ -255,6 +332,7 @@ Each phase follows TDD with:
   - Comprehensive error handling
 
 **Phase 3.2 IVF Persistence (100% complete)**
+
 - Implemented IVFMetadata for index versioning and tracking
 - Created SerializableInvertedList wrapper for CBOR serialization
 - Implemented IVFPersister with full save/load functionality
@@ -271,6 +349,7 @@ Each phase follows TDD with:
   - Atomic save/load operations
 
 **Phase 3.3 IVF Operations (100% complete)**
+
 - Implemented batch operations (batch_insert, batch_search)
 - Added retraining capabilities:
   - Full retrain with new configuration
@@ -292,6 +371,7 @@ Each phase follows TDD with:
   - Maintenance operations for production use
 
 **Phase 4.1 Hybrid Index Structure (100% complete)**
+
 - Implemented HybridConfig with recent_threshold and sub-index configurations
 - Created HybridIndex combining HNSW (recent) and IVF (historical) indices
 - Implemented TimestampedVector for tracking vector age
@@ -309,6 +389,7 @@ Each phase follows TDD with:
   - Thread-safe async implementation
 
 **Phase 4.2 Search Integration (100% complete)**
+
 - Implemented ParallelSearchConfig and parallel_search method
 - Created ResultMerger with multiple merge strategies:
   - TakeBest: Selects highest scoring result for duplicates
@@ -339,6 +420,7 @@ Each phase follows TDD with:
   - Comprehensive performance monitoring
 
 **Phase 4.3 Maintenance Operations (90% complete)**
+
 - Implemented MigrationScheduler with continuous migration support:
   - Configurable migration policies with batch sizes and quiet hours
   - Error handling with selective migration capability
@@ -369,6 +451,7 @@ Each phase follows TDD with:
   - Production-ready maintenance tools
 
 **Phase 5.1 REST API (100% complete)**
+
 - Implemented REST API with Axum framework:
   - ApiConfig for server configuration with CORS and timeout settings
   - Health check endpoint with index status reporting
@@ -395,6 +478,7 @@ Each phase follows TDD with:
   - Production-ready error responses with proper HTTP status codes
 
 **Phase 5.2 Client Libraries (Rust & JavaScript/TypeScript clients 100% complete)**
+
 - Implemented comprehensive Rust client library:
   - VectorDbClient with configurable base URL, timeout, retries, and auth token
   - Full CRUD operations for vectors (insert, get, update, delete)
@@ -413,6 +497,7 @@ Each phase follows TDD with:
   - Unit tests verify retry logic, builder patterns, and configuration
   - Integration tests marked as ignored (require running server)
 - Key design decisions:
+
   - Async/await throughout using tokio runtime
   - reqwest with rustls for TLS support (avoiding OpenSSL dependencies)
   - Strong typing for all request/response structures
@@ -435,6 +520,7 @@ Each phase follows TDD with:
   - Optimized for size with opt-level="z" and LTO
   - Target: web (for browser usage)
 - Build output:
+
   - vector_db_wasm.js - JavaScript glue code
   - vector_db_wasm_bg.wasm - Compiled WASM binary
   - vector_db_wasm.d.ts - TypeScript definitions
@@ -458,4 +544,31 @@ Each phase follows TDD with:
   - EventSource for Server-Sent Events
   - TypeScript with strict mode enabled
   - CommonJS module output for broad compatibility
+
+### 2025-07-23
+
+**Phase 7.1 & 7.2 S5 Storage - Chunk 1 Complete**
+
+- Implemented S5Storage struct with mock backend using HashMap
+- Added full Storage trait implementation with all required methods
+- Created Vector and VideoNFTMetadata types with CBOR serialization
+- Implemented CID generation and mapping (mock using SHA256)
+- Added compression support using zstd
+- Implemented batch operations for efficient bulk processing
+- Created comprehensive test suite (10 tests, all passing):
+  - Basic storage operations (put/get/delete)
+  - CID mapping and retrieval
+  - Batch operations
+  - Error handling
+  - Compression/decompression
+  - Concurrent operations
+  - Video NFT metadata serialization
+  - Multiple NFT type support
+- Key design decisions:
+  - Mock implementation allows testing without real S5 network
+  - HashMap backend simulates S5 storage behavior
+  - CID format: `s5://mock_<hash>` for easy identification
+  - Thread-safe implementation using Arc<RwLock<>>
+  - Separate metadata tracking for compression status
+- Ready for Chunk 3 real S5 integration
 ```

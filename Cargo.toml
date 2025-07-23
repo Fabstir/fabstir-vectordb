@@ -34,6 +34,9 @@ rand = "0.8"
 # Compression
 zstd = "0.13"
 
+# Hashing
+sha2 = "0.10"
+
 # Web framework
 axum = "0.7"
 tower = { version = "0.4", features = ["full"] }
