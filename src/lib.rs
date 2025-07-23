@@ -1,4 +1,5 @@
 pub mod api;
+pub mod cbor;
 pub mod client;
 pub mod core;
 pub mod hnsw;

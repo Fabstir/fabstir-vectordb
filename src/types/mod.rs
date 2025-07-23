@@ -59,3 +59,13 @@ impl VideoNFTMetadata {
         Ok(serde_cbor::from_slice(data)?)
     }
 }
+
+// S5-specific metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S5Metadata {
+    pub cid: String,
+    pub size: usize,
+    pub mime_type: String,
+    pub created_at: i64, // Unix timestamp
+    pub encryption: Option<String>,
+}

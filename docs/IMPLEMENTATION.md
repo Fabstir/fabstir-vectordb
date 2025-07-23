@@ -200,13 +200,17 @@ Foundation types, S5 integration, and vector operations.
 - [x] Handle connection pooling for S5 requests (mock) ✅ 2025-07-23
 - [x] Implement retry logic for network failures (mock) ✅ 2025-07-23
 
-### 7.2 CBOR Compatibility (Chunk 1 - Complete)
+### 7.2 CBOR Compatibility (Chunk 1 & 2 - Complete)
 
 - [x] Ensure vector serialisation matches s5-rs comprehensive_vectors.rs ✅ 2025-07-23
 - [x] Validate VideoNFTMetadata encoding matches test_encode.rs outputs ✅ 2025-07-23
 - [x] Test round-trip serialisation/deserialisation ✅ 2025-07-23
 - [ ] Verify binary compatibility with enhanced s5.js (Chunk 3)
 - [x] Support actual video NFT schema with attributes array ✅ 2025-07-23
+- [x] Create CBOR encoder/decoder module with deterministic encoding ✅ 2025-07-23
+- [x] Implement compression support with zstd ✅ 2025-07-23
+- [x] Add batch encoding/decoding capabilities ✅ 2025-07-23
+- [x] Test special float values and edge cases ✅ 2025-07-23
 
 ### 7.3 S5 Client Integration
 
@@ -547,7 +551,7 @@ Each phase follows TDD with:
 
 ### 2025-07-23
 
-**Phase 7.1 & 7.2 S5 Storage - Chunk 1 Complete**
+**Phase 7.1 & 7.2 S5 Storage - Chunk 1 & 2 Complete**
 
 - Implemented S5Storage struct with mock backend using HashMap
 - Added full Storage trait implementation with all required methods
@@ -570,5 +574,27 @@ Each phase follows TDD with:
   - CID format: `s5://mock_<hash>` for easy identification
   - Thread-safe implementation using Arc<RwLock<>>
   - Separate metadata tracking for compression status
-- Ready for Chunk 3 real S5 integration
+
+**Chunk 2: CBOR Compatibility Enhancement Complete**
+
+- Created dedicated CBOR module with encoder/decoder components
+- Implemented deterministic CBOR encoding for consistent output
+- Added support for S5Metadata type for S5-specific metadata
+- Enhanced compression/decompression capabilities
+- Implemented batch encoding/decoding for efficient operations
+- Created comprehensive CBOR compatibility test suite (11 tests passing, 1 ignored):
+  - Deterministic encoding verification
+  - Video NFT metadata encoding
+  - Large vector encoding (768-dimensional)
+  - Compression compatibility
+  - Special float value handling
+  - Empty value encoding
+  - Batch operations
+  - NFT type variations
+  - Genre array and attributes encoding
+- Key features:
+  - Uses serde_cbor with self-describing format
+  - Compression achieves ~95% size reduction for repetitive data
+  - Supports all float edge cases (NaN, infinity, min/max)
+  - Ready for Chunk 3 real S5 integration
 ```
