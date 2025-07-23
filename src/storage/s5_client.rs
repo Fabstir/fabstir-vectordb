@@ -145,8 +145,15 @@ impl S5Client {
     }
     
     pub async fn list_path(&self, path: &str) -> Result<Vec<DirectoryEntry>> {
+        // Add trailing slash for directory listing
+        let url = if path.is_empty() {
+            format!("{}/s5/fs/", self.base_url)
+        } else {
+            format!("{}/s5/fs/{}/", self.base_url, path)
+        };
+        
         let response = self.http_client
-            .get(&format!("{}/s5/fs/{}", self.base_url, path))
+            .get(&url)
             .send()
             .await?;
         

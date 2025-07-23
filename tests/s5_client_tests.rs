@@ -132,7 +132,7 @@ async fn test_s5_client_list_directory() {
     };
     
     // Mock directory listing
-    let _m = server.mock("GET", "/s5/fs/vectors/embeddings")
+    let _m = server.mock("GET", "/s5/fs/vectors/embeddings/")
         .with_status(200)
         .with_body(r#"{
             "entries": [
