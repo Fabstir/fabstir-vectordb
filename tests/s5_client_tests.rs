@@ -347,15 +347,25 @@ async fn test_s5_client_real_node() {
     };
     
     let cbor_data = vector.to_cbor().unwrap();
-    let cid = client.upload_data(cbor_data.clone()).await.unwrap();
     
-    println!("Uploaded to S5: {}", cid);
+    // Use path-based API for upload
+    let path = "vectors/test_real_vec.cbor";
+    let result = client.put_path(path, cbor_data.clone()).await.unwrap();
+    let cid = result.cid;
     
-    // Test real download
-    let downloaded = client.download_data(&cid).await.unwrap();
+    println!("Uploaded to S5 at path {}: {}", path, cid);
+    
+    // Test real download using path-based API
+    let downloaded = client.get_path(path).await.unwrap();
     assert_eq!(cbor_data, downloaded);
     
     // Verify vector integrity
     let decoded = Vector::from_cbor(&downloaded).unwrap();
     assert_eq!(vector.id, decoded.id);
+    assert_eq!(vector.values, decoded.values);
+    
+    // Test directory listing to verify file exists
+    let entries = client.list_path("vectors").await.unwrap();
+    println!("Directory listing: {:?}", entries);
+    assert!(entries.iter().any(|e| e.name == "test_real_vec.cbor"));
 }
