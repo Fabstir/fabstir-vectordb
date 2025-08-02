@@ -39,6 +39,15 @@ Fabstir AI Vector Database is a decentralized vector database built on top of En
             ┌──────────▼──────────┐
             │   S5 Storage Layer  │
             │  ┌─────────────┐    │
+            │  │Enhanced S5  │    │
+            │  │ Adapter     │    │
+            │  └──────┬──────┘    │
+            │         │           │
+            │  ┌──────▼──────┐    │
+            │  │ Mock/Real   │    │
+            │  │   Modes     │    │
+            │  └─────────────┘    │
+            │  ┌─────────────┐    │
             │  │ CBOR Format │    │
             │  └─────────────┘    │
             │  ┌─────────────┐    │
@@ -47,6 +56,12 @@ Fabstir AI Vector Database is a decentralized vector database built on top of En
             │  └─────────────┘    │
             └─────────────────────┘
 ```
+
+**Phase 8 Enhancements**:
+- Enhanced S5 Storage Adapter with mock and real modes
+- Improved configuration management with validation
+- Secure seed phrase handling (file support, validation)
+- Better error messages and health monitoring
 
 ## Installation & Setup
 
@@ -100,9 +115,14 @@ Environment variables can be set in `.env` file or passed directly:
 
 ```bash
 # S5 Storage Configuration
-S5_PORTAL_URL=https://s5.vup.cx          # S5 network portal URL
-S5_SEED_PHRASE=your-seed-phrase-here     # Optional: S5 seed phrase
+S5_MODE=mock                             # Storage mode: "mock" or "real" (default: mock)
+S5_PORTAL_URL=https://s5.vup.cx          # S5 network portal URL (required for real mode)
+S5_MOCK_SERVER_URL=http://localhost:5524 # Mock server URL (required for mock mode)
+S5_SEED_PHRASE=your-seed-phrase-here     # Optional: S5 seed phrase (12 or 24 words)
+S5_SEED_PHRASE_FILE=/path/to/seed.txt    # Optional: Path to seed phrase file
 S5_API_KEY=your-api-key                  # Optional: S5 API key
+S5_CONNECTION_TIMEOUT=5000               # Connection timeout in ms (default: 5000)
+S5_RETRY_ATTEMPTS=3                      # Number of retry attempts (default: 3)
 
 # Vector Database Configuration
 VECTOR_DIMENSION=1536                     # Vector dimensions (default: 1536 for OpenAI)
@@ -166,6 +186,11 @@ Response:
 {
   "status": "healthy",
   "version": "0.1.0",
+  "storage": {
+    "mode": "mock",
+    "connected": true,
+    "base_url": "http://localhost:5524"
+  },
   "indices": {
     "hnsw": {
       "healthy": true,
@@ -178,6 +203,12 @@ Response:
   }
 }
 ```
+
+The `storage` object provides information about the S5 storage backend:
+- `mode`: Either "mock" or "real" depending on configuration
+- `connected`: Whether the storage backend is accessible
+- `base_url`: Present for mock mode, shows the mock server URL
+- `portal_url`: Present for real mode, shows the S5 portal URL
 
 #### Vector Operations
 
@@ -646,16 +677,31 @@ pub struct S5Config {
 
 The S5 seed phrase can be:
 1. Set via `S5_SEED_PHRASE` environment variable
-2. Generated automatically and stored securely
-3. Retrieved via admin API (with proper authentication)
+2. Loaded from a file via `S5_SEED_PHRASE_FILE` environment variable
+3. Generated automatically and stored securely
+4. Retrieved via admin API (with proper authentication)
 
+#### Using Environment Variable
 ```bash
-# Set custom seed phrase
-export S5_SEED_PHRASE="your twelve word mnemonic seed phrase here for s5"
-
-# Or let the system generate one
-# The generated seed will be logged on first startup
+# Set custom seed phrase (must be 12 or 24 words)
+export S5_SEED_PHRASE="your twelve word mnemonic seed phrase here for s5 storage access"
 ```
+
+#### Using Seed Phrase File (Recommended)
+```bash
+# Create seed phrase file with proper permissions
+echo "your twelve word seed phrase goes here like this example phrase" > ~/.s5-seed
+chmod 600 ~/.s5-seed  # Restrict access to owner only
+
+# Use file for configuration
+export S5_SEED_PHRASE_FILE=~/.s5-seed
+```
+
+**Security Notes**:
+- Seed phrases must contain exactly 12 or 24 words
+- On Unix systems, seed phrase files with world-readable permissions will trigger a warning
+- The file method takes precedence over the environment variable if both are set
+- Seed phrases are never logged or exposed in API responses
 
 ### Portal Configuration
 
@@ -1110,7 +1156,25 @@ await client.admin.migrate();
 
 ### Common Errors and Solutions
 
-#### 1. Dimension Mismatch
+#### 1. Configuration Errors
+
+```typescript
+// Error: S5_PORTAL_URL required for real mode
+// Solution: Set the portal URL when using real mode
+export S5_MODE=real
+export S5_PORTAL_URL=https://s5.vup.cx
+
+// Error: Invalid URL format for S5_PORTAL_URL: must start with http:// or https://
+// Solution: Ensure URLs have proper protocol
+export S5_PORTAL_URL=https://s5.vup.cx  // ✓ Correct
+export S5_PORTAL_URL=s5.vup.cx          // ✗ Wrong
+
+// Error: Invalid seed phrase: expected 12 or 24 words, got 10
+// Solution: Use a valid BIP39 seed phrase with correct word count
+export S5_SEED_PHRASE="twelve words go here for proper seed phrase format example test"
+```
+
+#### 2. Dimension Mismatch
 
 ```typescript
 // Error: DimensionMismatch: expected 1536, got 384
@@ -1124,7 +1188,7 @@ function validateVector(vector: number[]): void {
 }
 ```
 
-#### 2. Duplicate Vector ID
+#### 3. Duplicate Vector ID
 
 ```typescript
 // Error: DuplicateVector: Vector with ID vec_123 already exists
@@ -1139,7 +1203,7 @@ try {
 }
 ```
 
-#### 3. Index Not Initialized
+#### 4. Index Not Initialized
 
 ```typescript
 // Error: NotInitialized: Index not trained
@@ -1148,7 +1212,7 @@ const trainingVectors = await loadTrainingData();
 await client.admin.initializeIndex(trainingVectors);
 ```
 
-#### 4. S5 Connection Issues
+#### 5. S5 Connection Issues
 
 ```typescript
 // Error: NetworkError: Failed to connect to S5 portal
