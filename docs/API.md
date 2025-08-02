@@ -664,7 +664,7 @@ export S5_SEED_PHRASE="your twelve word mnemonic seed phrase here for s5"
 export S5_PORTAL_URL=https://s5.vup.cx
 
 # Or use custom portal
-export S5_PORTAL_URL=http://localhost:5522
+export S5_PORTAL_URL=http://localhost:5524
 ```
 
 ## HAMT Sharding

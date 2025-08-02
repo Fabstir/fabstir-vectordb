@@ -8,7 +8,7 @@ use vector_db::types::Vector;
 async fn test_s5_client_creation() {
     // Test creating S5 client with configuration
     let config = S5Config {
-        node_url: "http://localhost:5522".to_string(), // Default S5 node port
+        node_url: "http://localhost:5524".to_string(), // Default S5 node port
         api_key: Some("test-api-key".to_string()),
         enable_compression: true,
         cache_size: 100,
@@ -331,7 +331,7 @@ async fn test_s5_client_retry_logic() {
 #[ignore = "requires local S5 node"]
 async fn test_s5_client_real_node() {
     let config = S5Config {
-        node_url: "http://localhost:5522".to_string(),
+        node_url: "http://localhost:5524".to_string(),
         api_key: None,
         enable_compression: true,
         cache_size: 100,

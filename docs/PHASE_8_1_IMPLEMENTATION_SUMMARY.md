@@ -58,4 +58,4 @@ Tests gracefully skip when mock server is unavailable, with appropriate messages
 - Health check: `/health` (mock) or `/api/health` (real)
 
 ## Next Steps
-When the Enhanced s5.js test server is running on http://localhost:5522, the integration tests will execute full CRUD operations. The implementation is ready for integration with the actual Enhanced s5.js library.
+When the Enhanced s5.js test server is running on http://localhost:5524, the integration tests will execute full CRUD operations. The implementation is ready for integration with the actual Enhanced s5.js library.

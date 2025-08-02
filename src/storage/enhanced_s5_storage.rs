@@ -126,6 +126,7 @@ impl S5StorageAdapter for EnhancedS5Storage {
             let url = url.clone();
             let data = data.clone();
             async move {
+                eprintln!("DEBUG: PUT request to URL: {}", url);
                 let response = client
                     .put(&url)
                     .body(data.clone())
@@ -133,12 +134,16 @@ impl S5StorageAdapter for EnhancedS5Storage {
                     .send()
                     .await?;
 
+                eprintln!("DEBUG: Response status: {}", response.status());
                 if response.status().is_success() {
                     Ok(())
                 } else {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    eprintln!("DEBUG: Error response body: {}", body);
                     Err(Box::new(std::io::Error::new(
                         std::io::ErrorKind::Other, 
-                        format!("PUT failed with status: {}", response.status())
+                        format!("PUT failed with status: {}", status)
                     )) as Box<dyn Error + Send + Sync>)
                 }
             }
@@ -278,14 +283,19 @@ impl S5StorageAdapter for EnhancedS5Storage {
     }
 
     async fn is_connected(&self) -> bool {
+        // For Enhanced s5.js, we just check if we can connect to the server
+        // since it doesn't have a dedicated health endpoint
         let test_url = match self.config.mode {
-            StorageMode::Mock => format!("{}/health", self.base_url),
+            StorageMode::Mock => self.base_url.clone(),
             StorageMode::Real => format!("{}/api/health", self.base_url),
         };
 
         match self.client.get(&test_url).send().await {
-            Ok(response) => response.status().is_success(),
-            Err(_) => false,
+            Ok(_) => true,  // Any response (including 404) means server is running
+            Err(e) => {
+                // Check if it's a connection error
+                !e.is_connect()
+            }
         }
     }
 

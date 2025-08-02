@@ -9,7 +9,7 @@ mod phase_8_1_enhanced_s5_integration {
     use super::*;
 
     async fn is_mock_server_available() -> bool {
-        match reqwest::get("http://localhost:5522/health").await {
+        match reqwest::get("http://localhost:5524/health").await {
             Ok(response) => response.status().is_success(),
             Err(_) => false,
         }
@@ -23,7 +23,7 @@ mod phase_8_1_enhanced_s5_integration {
             // Test that we can create an S5 client configured for mock server
             let config = S5StorageConfig {
                 mode: StorageMode::Mock,
-                mock_server_url: Some("http://localhost:5522".to_string()),
+                mock_server_url: Some("http://localhost:5524".to_string()),
                 portal_url: None,
                 seed_phrase: None,
                 connection_timeout: Some(5000),
@@ -59,7 +59,7 @@ mod phase_8_1_enhanced_s5_integration {
         fn should_support_both_mock_and_real_storage_modes() {
             let mock_config = S5StorageConfig {
                 mode: StorageMode::Mock,
-                mock_server_url: Some("http://localhost:5522".to_string()),
+                mock_server_url: Some("http://localhost:5524".to_string()),
                 portal_url: None,
                 seed_phrase: None,
                 connection_timeout: None,
@@ -117,7 +117,7 @@ mod phase_8_1_enhanced_s5_integration {
         async fn should_implement_s5_storage_adapter_trait() {
             let config = S5StorageConfig {
                 mode: StorageMode::Mock,
-                mock_server_url: Some("http://localhost:5522".to_string()),
+                mock_server_url: Some("http://localhost:5524".to_string()),
                 portal_url: None,
                 seed_phrase: None,
                 connection_timeout: None,
@@ -143,7 +143,7 @@ mod phase_8_1_enhanced_s5_integration {
         fn should_create_storage_instance_based_on_environment_variables() {
             // Test mock mode
             env::set_var("S5_MODE", "mock");
-            env::set_var("S5_MOCK_SERVER_URL", "http://localhost:5522");
+            env::set_var("S5_MOCK_SERVER_URL", "http://localhost:5524");
             
             let mock_storage = S5StorageFactory::create_from_env().unwrap();
             assert_eq!(mock_storage.get_mode(), StorageMode::Mock);
@@ -166,7 +166,7 @@ mod phase_8_1_enhanced_s5_integration {
         #[test]
         fn should_default_to_mock_mode_when_s5_mode_not_set() {
             env::remove_var("S5_MODE");
-            env::set_var("S5_MOCK_SERVER_URL", "http://localhost:5522");
+            env::set_var("S5_MOCK_SERVER_URL", "http://localhost:5524");
             
             let storage = S5StorageFactory::create_from_env().unwrap();
             assert_eq!(storage.get_mode(), StorageMode::Mock);
@@ -196,13 +196,13 @@ mod phase_8_1_enhanced_s5_integration {
         #[tokio::test]
         async fn should_maintain_compatibility_with_existing_storage_trait() {
             if !is_mock_server_available().await {
-                eprintln!("Skipping test: Mock server not available at http://localhost:5522");
+                eprintln!("Skipping test: Mock server not available at http://localhost:5524");
                 return;
             }
 
             let config = S5StorageConfig {
                 mode: StorageMode::Mock,
-                mock_server_url: Some("http://localhost:5522".to_string()),
+                mock_server_url: Some("http://localhost:5524".to_string()),
                 portal_url: None,
                 seed_phrase: None,
                 connection_timeout: None,
@@ -233,13 +233,13 @@ mod phase_8_1_enhanced_s5_integration {
         #[tokio::test]
         async fn should_handle_batch_operations_efficiently() {
             if !is_mock_server_available().await {
-                eprintln!("Skipping test: Mock server not available at http://localhost:5522");
+                eprintln!("Skipping test: Mock server not available at http://localhost:5524");
                 return;
             }
 
             let config = S5StorageConfig {
                 mode: StorageMode::Mock,
-                mock_server_url: Some("http://localhost:5522".to_string()),
+                mock_server_url: Some("http://localhost:5524".to_string()),
                 portal_url: None,
                 seed_phrase: None,
                 connection_timeout: None,
@@ -289,13 +289,13 @@ mod phase_8_1_enhanced_s5_integration {
         #[tokio::test]
         async fn should_serialize_data_with_cbor_as_in_phase_7() {
             if !is_mock_server_available().await {
-                eprintln!("Skipping test: Mock server not available at http://localhost:5522");
+                eprintln!("Skipping test: Mock server not available at http://localhost:5524");
                 return;
             }
 
             let config = S5StorageConfig {
                 mode: StorageMode::Mock,
-                mock_server_url: Some("http://localhost:5522".to_string()),
+                mock_server_url: Some("http://localhost:5524".to_string()),
                 portal_url: None,
                 seed_phrase: None,
                 connection_timeout: None,
