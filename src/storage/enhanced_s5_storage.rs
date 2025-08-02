@@ -303,30 +303,39 @@ impl S5StorageAdapter for EnhancedS5Storage {
     }
 
     async fn is_connected(&self) -> bool {
-        // For Enhanced s5.js, we just check if we can connect to the server
-        // since it doesn't have a dedicated health endpoint
-        let test_url = match self.config.mode {
-            StorageMode::Mock => self.base_url.clone(),
-            StorageMode::Real => format!("{}/api/health", self.base_url),
-        };
+        // Check if we can connect to the server
+        let health_url = format!("{}/health", self.base_url);
 
-        match self.client.get(&test_url).send().await {
-            Ok(_) => true,  // Any response (including 404) means server is running
-            Err(e) => {
-                // Check if it's a connection error
-                !e.is_connect()
-            }
+        match self.client.get(&health_url).send().await {
+            Ok(response) => response.status().is_success(),
+            Err(_) => false,
         }
     }
 
     async fn get_stats(&self) -> Result<serde_json::Value, Box<dyn Error + Send + Sync>> {
         let cache = self.cache.read().await;
-        Ok(serde_json::json!({
+        let connected = self.is_connected().await;
+        
+        let mut stats = serde_json::json!({
             "mode": format!("{:?}", self.config.mode),
             "cache_entries": cache.len(),
-            "base_url": self.base_url,
-            "connected": self.is_connected().await,
-        }))
+            "connected": connected,
+        });
+        
+        // Add URL information based on mode (never include seed phrase)
+        match self.config.mode {
+            StorageMode::Mock => {
+                stats["base_url"] = serde_json::Value::String(self.base_url.clone());
+            }
+            StorageMode::Real => {
+                // For real mode, show the portal URL but never the seed phrase
+                if let Some(ref portal_url) = self.config.portal_url {
+                    stats["portal_url"] = serde_json::Value::String(portal_url.clone());
+                }
+            }
+        }
+        
+        Ok(stats)
     }
 }
 

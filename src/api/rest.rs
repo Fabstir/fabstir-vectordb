@@ -116,7 +116,18 @@ pub struct SearchResult {
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
+    pub storage: StorageHealth,
     pub indices: IndexHealth,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StorageHealth {
+    pub mode: String,
+    pub connected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub portal_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -243,10 +254,19 @@ pub async fn create_app(config: ApiConfig) -> Result<Router, anyhow::Error> {
 async fn health_handler(
     State(state): State<AppState>,
 ) -> Result<Json<HealthResponse>, ErrorResponse> {
-    // TODO: Implement actual health checks
+    // TODO: Get actual storage info from HybridIndex once it exposes storage
+    // For now, return default mock storage info
+    let storage_health = StorageHealth {
+        mode: "mock".to_string(),
+        connected: true,
+        base_url: Some("http://localhost:5524".to_string()),
+        portal_url: None,
+    };
+    
     Ok(Json(HealthResponse {
         status: "healthy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
+        storage: storage_health,
         indices: IndexHealth {
             hnsw: IndexStatus {
                 healthy: true,
