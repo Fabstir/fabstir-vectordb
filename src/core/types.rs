@@ -45,8 +45,11 @@ pub struct Embedding {
 }
 
 impl Embedding {
-    pub fn new(data: Vec<f32>) -> Self {
-        Embedding { data }
+    pub fn new(data: Vec<f32>) -> Result<Self, &'static str> {
+        if data.is_empty() {
+            return Err("Embedding cannot be empty");
+        }
+        Ok(Embedding { data })
     }
 
     pub fn dimension(&self) -> usize {
@@ -67,7 +70,7 @@ impl Embedding {
             return self.clone();
         }
         let normalized: Vec<f32> = self.data.iter().map(|x| x / mag).collect();
-        Embedding::new(normalized)
+        Embedding::new_unchecked(normalized)
     }
 
     pub fn cosine_similarity(&self, other: &Self) -> f32 {
@@ -111,6 +114,36 @@ impl Embedding {
             .map(|(a, b)| (a - b) * (a - b))
             .sum::<f32>()
             .sqrt()
+    }
+    
+    // For backward compatibility, provide a method that doesn't return Result
+    pub fn new_unchecked(data: Vec<f32>) -> Self {
+        Embedding { data }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Vector {
+    pub id: VectorId,
+    pub embedding: Embedding,
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl Vector {
+    pub fn new(id: VectorId, embedding: Embedding) -> Self {
+        Self {
+            id,
+            embedding,
+            metadata: None,
+        }
+    }
+    
+    pub fn with_metadata(id: VectorId, embedding: Embedding, metadata: serde_json::Value) -> Self {
+        Self {
+            id,
+            embedding,
+            metadata: Some(metadata),
+        }
     }
 }
 

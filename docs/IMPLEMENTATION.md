@@ -618,4 +618,150 @@ Each phase follows TDD with:
   - Sequential batch uploads (S5 doesn't have native batch API)
   - Immutable storage model (delete only removes from local maps)
   - Ready for integration with real S5 network (https://s5.cx)
+
+## Phase 8: Enhanced s5.js Integration (Real Implementation)
+
+**Goal**: Replace mock S5 storage with actual Enhanced s5.js library integration, supporting both mock server and real S5 portal connectivity
+
+### Background
+
+Phase 7 implemented a mock S5Storage using HashMap to simulate S5 behaviour. This phase integrates with the actual Enhanced s5.js library, providing:
+
+- Connection to Enhanced s5.js mock server for development
+- Connection to real S5 portals (e.g., https://s5.vup.cx) for production
+- Seamless switching between modes via configuration
+
+### 8.1 Enhanced s5.js Library Integration
+
+- [ ] **8.1.1 Add Enhanced s5.js Dependency**
+
+  - [ ] Add enhanced s5.js as npm dependency to WASM bindings
+  - [ ] Configure TypeScript paths for s5.js imports
+  - [ ] Update build process to include s5.js bundle
+  - [ ] Verify WASM compatibility with s5.js
+
+- [ ] **8.1.2 Create S5 Adapter Pattern**
+  - [ ] Design S5StorageAdapter trait for mode switching
+  - [ ] Implement EnhancedS5Storage using actual s5.js library
+  - [ ] Create factory pattern for mock/real mode selection
+  - [ ] Maintain backward compatibility with existing Storage trait
+
+### 8.2 Mock Server Integration
+
+- [ ] **8.2.1 Connect to Enhanced s5.js Mock Server**
+
+  - [ ] Configure connection to localhost:5522 (host.docker.internal from container)
+  - [ ] Implement path-based API calls (PUT/GET/DELETE /s5/fs/\*)
+  - [ ] Handle mock server availability detection
+  - [ ] Add graceful fallback if mock server unavailable
+
+- [ ] **8.2.2 Mock Mode Testing**
+  - [ ] Create test-s5-mock-integration test suite
+  - [ ] Test vector CRUD operations via mock server
+  - [ ] Verify HAMT sharding at 1000+ vectors
+  - [ ] Test batch operations and performance
+  - [ ] Validate metadata storage and retrieval
+
+### 8.3 Real S5 Portal Integration
+
+- [ ] **8.3.1 S5 Portal Connection**
+
+  - [ ] Implement S5 client initialisation with seed phrase
+  - [ ] Add portal registration logic (registerOnNewPortal)
+  - [ ] Configure portal URL selection (default: https://s5.vup.cx)
+  - [ ] Handle authentication and identity management
+
+- [ ] **8.3.2 Real Portal Testing**
+  - [ ] Create test-s5-real-integration test suite
+  - [ ] Test with generated seed phrases
+  - [ ] Verify vector persistence across sessions
+  - [ ] Test network resilience and retry logic
+  - [ ] Validate large-scale operations (10k+ vectors)
+
+### 8.4 Configuration & Mode Management
+
+- [ ] **8.4.1 Environment Configuration**
+
+  - [ ] Add S5_MODE environment variable (mock/real)
+  - [ ] Configure S5_PORTAL_URL for custom portals
+  - [ ] Handle S5_SEED_PHRASE securely
+  - [ ] Add connection timeout settings
+
+- [ ] **8.4.2 Runtime Mode Switching**
+  - [ ] Implement mode detection on startup
+  - [ ] Create consistent API regardless of mode
+  - [ ] Add mode status to health endpoint
+  - [ ] Document mode-specific behaviours
+
+### 8.5 Docker & Networking
+
+- [ ] **8.5.1 Container Networking**
+
+  - [ ] Configure Docker networking for host access
+  - [ ] Add host.docker.internal mapping
+  - [ ] Update docker-compose.yml with mode settings
+  - [ ] Test cross-container communication
+
+- [ ] **8.5.2 Development Workflow**
+  - [ ] Create scripts for starting mock server
+  - [ ] Add mode validation on startup
+  - [ ] Provide clear setup instructions
+  - [ ] Add troubleshooting guide
+
+### 8.6 Integration Testing & Validation
+
+- [ ] **8.6.1 Comprehensive Test Suite**
+
+  - [ ] Create mode-agnostic test helpers
+  - [ ] Implement parallel test execution
+  - [ ] Add performance comparison (mock vs real)
+  - [ ] Test error scenarios and edge cases
+
+- [ ] **8.6.2 Migration Path**
+  - [ ] Create migration tool from mock to real storage
+  - [ ] Test data integrity during migration
+  - [ ] Document migration procedures
+  - [ ] Add rollback capabilities
+
+### Success Criteria
+
+- [ ] All existing tests pass with Enhanced s5.js integration
+- [ ] Mock mode provides <10ms latency for development
+- [ ] Real S5 portal connection handles 1000+ QPS
+- [ ] Seamless mode switching without code changes
+- [ ] Clear documentation for both modes
+- [ ] No regression in vector database functionality
+
+### Technical Decisions
+
+1. **Why Adapter Pattern**: Allows runtime mode selection without changing client code
+2. **Mock Server First**: Enables rapid development without S5 network dependency
+3. **Path-Based API**: Matches Enhanced s5.js fs API for consistency
+4. **Seed Phrase Management**: Generated if not provided, stored securely
+
+### Dependencies
+
+- Enhanced s5.js library (latest version with path-based API)
+- Docker networking configuration for host access
+- S5 portal account (for real mode testing)
+
+### Risks & Mitigations
+
+1. **Risk**: WASM compatibility issues with s5.js
+
+   - **Mitigation**: Use s5.js via Node.js API server if needed
+
+2. **Risk**: Network latency in real mode affecting performance
+
+   - **Mitigation**: Implement aggressive caching and batch operations
+
+3. **Risk**: Mock server availability during development
+   - **Mitigation**: Auto-detect and provide clear setup instructions
+
+### Estimated Timeline
+
+- Week 1: Enhanced s5.js integration and adapter pattern
+- Week 2: Mock server integration and testing
+- Week 3: Real S5 portal integration and testing
+- Week 4: Polish, documentation, and migration tools
 ```
