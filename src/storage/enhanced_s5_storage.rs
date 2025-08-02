@@ -73,7 +73,28 @@ impl EnhancedS5Storage {
                     url.clone()
                 }
             }
-            StorageMode::Real => config.portal_url.as_ref().unwrap().clone(),
+            StorageMode::Real => {
+                // For real mode, portal_url points to our Enhanced s5.js service
+                // which handles the actual S5 portal connection
+                let service_url = config.portal_url.as_ref().unwrap();
+                
+                // Handle Docker networking for real mode too
+                if service_url.contains("localhost") {
+                    let in_docker = std::path::Path::new("/.dockerenv").exists() ||
+                        std::fs::read_to_string("/proc/1/cgroup")
+                            .unwrap_or_default()
+                            .contains("docker");
+                    
+                    if in_docker {
+                        // In Docker, use the service container name
+                        service_url.replace("localhost", "s5-real")
+                    } else {
+                        service_url.clone()
+                    }
+                } else {
+                    service_url.clone()
+                }
+            }
         };
 
         Ok(Self {
@@ -108,10 +129,9 @@ impl EnhancedS5Storage {
     }
 
     fn get_storage_path(&self, key: &str) -> String {
-        match self.config.mode {
-            StorageMode::Mock => format!("/s5/fs/{}", key),
-            StorageMode::Real => format!("/storage/{}", key),
-        }
+        // Both mock and real modes use the same API paths
+        // The difference is the backend service (mock vs real S5)
+        format!("/s5/fs/{}", key)
     }
 }
 

@@ -672,19 +672,19 @@ Phase 7 implemented a mock S5Storage using HashMap to simulate S5 behaviour. Thi
 
 ### 8.3 Real S5 Portal Integration
 
-- [ ] **8.3.1 S5 Portal Connection**
+- [x] **8.3.1 S5 Portal Connection**
 
-  - [ ] Implement S5 client initialisation with seed phrase
-  - [ ] Add portal registration logic (registerOnNewPortal)
-  - [ ] Configure portal URL selection (default: https://s5.vup.cx)
-  - [ ] Handle authentication and identity management
+  - [x] Implement S5 client initialisation with seed phrase
+  - [x] Add portal registration logic (registerOnNewPortal)
+  - [x] Configure portal URL selection (default: https://s5.vup.cx)
+  - [x] Handle authentication and identity management
 
-- [ ] **8.3.2 Real Portal Testing**
-  - [ ] Create test-s5-real-integration test suite
-  - [ ] Test with generated seed phrases
-  - [ ] Verify vector persistence across sessions
-  - [ ] Test network resilience and retry logic
-  - [ ] Validate large-scale operations (10k+ vectors)
+- [x] **8.3.2 Real Portal Testing**
+  - [x] Create test-s5-real-integration test suite
+  - [x] Test with generated seed phrases
+  - [x] Verify vector persistence across sessions
+  - [x] Test network resilience and retry logic
+  - [x] Validate large-scale operations (10k+ vectors)
 
 ### 8.4 Configuration & Mode Management
 

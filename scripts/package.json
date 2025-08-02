@@ -1,0 +1,18 @@
+{
+  "name": "real-s5-server",
+  "version": "1.0.0",
+  "description": "Real S5 network bridge server using Enhanced s5.js",
+  "main": "real-s5-server.js",
+  "scripts": {
+    "start": "node real-s5-server.js",
+    "dev": "nodemon real-s5-server.js"
+  },
+  "dependencies": {
+    "@parajbs-dev/s5client-js": "^0.1.0",
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

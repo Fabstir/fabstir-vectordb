@@ -1,0 +1,22 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install minimal dependencies
+RUN npm init -y && npm install express body-parser
+
+# Copy server script (using mock for now)
+COPY real-s5-server-mock.js ./
+
+# Create data directory
+RUN mkdir -p /data
+
+# Expose port
+EXPOSE 5524
+
+# Set environment variables
+ENV S5_DATA_DIR=/data
+ENV S5_SERVICE_PORT=5524
+
+# Run the server
+CMD ["node", "real-s5-server-mock.js"]

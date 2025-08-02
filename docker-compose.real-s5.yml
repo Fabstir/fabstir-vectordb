@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  s5-real:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.real-s5
+    container_name: s5-real
+    environment:
+      - S5_PORTAL_URL=${S5_PORTAL_URL:-https://s5.vup.cx}
+      - S5_SEED_PHRASE=${S5_SEED_PHRASE}
+      - S5_SERVICE_PORT=5524
+      - S5_DATA_DIR=/data
+    volumes:
+      - s5-real-data:/data
+    ports:
+      - "5524:5524"
+    networks:
+      - fabstir-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5524/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  vector-db:
+    build: .
+    container_name: vector-db-real-test
+    depends_on:
+      - s5-real
+    environment:
+      - S5_SERVICE_URL=http://s5-real:5524
+      - S5_SEED_PHRASE=${S5_SEED_PHRASE}
+    volumes:
+      - .:/workspace
+    networks:
+      - fabstir-network
+    command: cargo test test_s5_real_integration -- --ignored --nocapture
+
+volumes:
+  s5-real-data:
+
+networks:
+  fabstir-network:
+    driver: bridge
