@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use std::env;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -44,6 +45,13 @@ pub struct AppState {
     pub hybrid_index: Arc<HybridIndex>,
     pub storage: Arc<EnhancedS5Storage>,
     pub vector_map: Arc<RwLock<HashMap<String, TimestampedVector>>>,
+    pub storage_config: StorageConfigInfo,
+}
+
+#[derive(Clone, Debug)]
+pub struct StorageConfigInfo {
+    pub mode: String,
+    pub url: String,
 }
 
 // Request/Response types
@@ -219,22 +227,60 @@ impl IntoResponse for ErrorResponse {
 }
 
 pub async fn create_app(config: ApiConfig) -> Result<Router, anyhow::Error> {
-    // Initialize storage from environment
-    let storage = match S5StorageFactory::create_from_env() {
-        Ok(s) => Arc::new(s),
-        Err(e) => {
-            error!("Failed to create storage, using mock mode: {}", e);
-            // Create a default mock storage
-            let mock_config = crate::storage::s5_adapter::S5StorageConfig {
-                mode: crate::storage::s5_adapter::StorageMode::Mock,
-                mock_server_url: Some("http://localhost:5524".to_string()),
-                portal_url: None,
-                seed_phrase: None,
-                connection_timeout: Some(5000),
-                retry_attempts: Some(3),
-            };
-            Arc::new(EnhancedS5Storage::new(mock_config).map_err(|e| anyhow::anyhow!("Storage error: {}", e))?)
+    // Determine storage mode from environment
+    let storage_mode = env::var("STORAGE_MODE")
+        .or_else(|_| env::var("S5_MODE"))
+        .unwrap_or_else(|_| "mock".to_string());
+    
+    let (storage, storage_config_info) = if storage_mode == "real" {
+        // Try to create real S5 storage
+        match S5StorageFactory::create_from_env() {
+            Ok(s) => {
+                let portal_url = env::var("S5_PORTAL_URL")
+                    .unwrap_or_else(|_| "http://localhost:5524".to_string());
+                let info = StorageConfigInfo {
+                    mode: "real".to_string(),
+                    url: portal_url,
+                };
+                (Arc::new(s), info)
+            },
+            Err(e) => {
+                error!("Failed to create real S5 storage, falling back to mock: {}", e);
+                // Fall back to mock mode
+                let mock_url = env::var("S5_MOCK_SERVER_URL")
+                    .unwrap_or_else(|_| "http://localhost:5522".to_string());
+                let mock_config = crate::storage::s5_adapter::S5StorageConfig {
+                    mode: crate::storage::s5_adapter::StorageMode::Mock,
+                    mock_server_url: Some(mock_url.clone()),
+                    portal_url: None,
+                    seed_phrase: None,
+                    connection_timeout: Some(5000),
+                    retry_attempts: Some(3),
+                };
+                let info = StorageConfigInfo {
+                    mode: "mock".to_string(),
+                    url: mock_url,
+                };
+                (Arc::new(EnhancedS5Storage::new(mock_config).map_err(|e| anyhow::anyhow!("Storage error: {}", e))?), info)
+            }
         }
+    } else {
+        // Mock mode
+        let mock_url = env::var("S5_MOCK_SERVER_URL")
+            .unwrap_or_else(|_| "http://localhost:5522".to_string());
+        let mock_config = crate::storage::s5_adapter::S5StorageConfig {
+            mode: crate::storage::s5_adapter::StorageMode::Mock,
+            mock_server_url: Some(mock_url.clone()),
+            portal_url: None,
+            seed_phrase: None,
+            connection_timeout: Some(5000),
+            retry_attempts: Some(3),
+        };
+        let info = StorageConfigInfo {
+            mode: "mock".to_string(),
+            url: mock_url,
+        };
+        (Arc::new(EnhancedS5Storage::new(mock_config).map_err(|e| anyhow::anyhow!("Storage error: {}", e))?), info)
     };
     
     // Initialize HybridIndex with default config
@@ -262,6 +308,7 @@ pub async fn create_app(config: ApiConfig) -> Result<Router, anyhow::Error> {
         hybrid_index,
         storage,
         vector_map: Arc::new(RwLock::new(HashMap::new())),
+        storage_config: storage_config_info,
     };
 
     let cors = CorsLayer::new()
@@ -304,13 +351,20 @@ pub async fn create_app(config: ApiConfig) -> Result<Router, anyhow::Error> {
 async fn health_handler(
     State(state): State<AppState>,
 ) -> Result<Json<HealthResponse>, ErrorResponse> {
-    // TODO: Get actual storage info from HybridIndex once it exposes storage
-    // For now, return default mock storage info
+    // Use actual storage configuration from state
     let storage_health = StorageHealth {
-        mode: "mock".to_string(),
+        mode: state.storage_config.mode.clone(),
         connected: true,
-        base_url: Some("http://localhost:5524".to_string()),
-        portal_url: None,
+        base_url: if state.storage_config.mode == "mock" {
+            Some(state.storage_config.url.clone())
+        } else {
+            None
+        },
+        portal_url: if state.storage_config.mode == "real" {
+            Some(state.storage_config.url.clone())
+        } else {
+            None
+        },
     };
     
     Ok(Json(HealthResponse {

@@ -17,7 +17,8 @@ impl S5StorageFactory {
     }
 
     pub fn create_from_env() -> Result<EnhancedS5Storage, Box<dyn Error + Send + Sync>> {
-        let mode = match env::var("S5_MODE").as_deref() {
+        // Check STORAGE_MODE first, then fall back to S5_MODE
+        let mode = match env::var("STORAGE_MODE").or_else(|_| env::var("S5_MODE")).as_deref() {
             Ok("real") => StorageMode::Real,
             Ok("mock") | _ => StorageMode::Mock, // Default to mock
         };
@@ -25,7 +26,7 @@ impl S5StorageFactory {
         let config = match mode {
             StorageMode::Mock => {
                 let mock_server_url = env::var("S5_MOCK_SERVER_URL")
-                    .map_err(|_| StorageConfigError::new("S5_MOCK_SERVER_URL required for mock mode"))?;
+                    .unwrap_or_else(|_| "http://localhost:5522".to_string());
                 
                 // Validate URL format
                 if !mock_server_url.starts_with("http://") && !mock_server_url.starts_with("https://") {
