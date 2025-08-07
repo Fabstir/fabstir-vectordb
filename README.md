@@ -12,6 +12,18 @@ A high-performance, decentralized vector database built on S5 storage with hybri
 - 🛡️ **Secure Configuration**: Enhanced seed phrase management with file support and validation
 - 🐳 **Docker Ready**: Full Docker and Docker Compose support for easy deployment
 
+## Implementation Status
+
+The core vector database functionality is fully implemented and working:
+- ✅ Vector CRUD operations (insert, batch insert, get, delete)
+- ✅ Vector similarity search with hybrid HNSW/IVF indexing
+- ✅ S5 storage integration with mock and real modes
+- ✅ Health monitoring and configuration management
+- ⚠️ Admin endpoints (statistics, migration, backup) have placeholder implementations
+- ⚠️ Streaming endpoints (SSE, WebSocket) have placeholder implementations
+
+See [API Documentation](docs/API.md#implementation-status) for detailed endpoint status.
+
 ## Quick Start
 
 ### Using Docker (Recommended)
@@ -25,7 +37,7 @@ cd fabstir-ai-vector-db
 docker-compose up --build
 
 # The services will be available at:
-# - REST API: http://localhost:7530
+# - REST API: http://localhost:7530 (configured via VECTOR_DB_PORT env var)
 # - MCP Server: http://localhost:7531
 # - Admin Interface: http://localhost:7532
 ```
@@ -42,8 +54,8 @@ cd fabstir-ai-vector-db
 # Build the Rust backend
 cargo build --release
 
-# Run the server
-cargo run --bin server
+# Run the server (default port 8080, or set VECTOR_DB_PORT=7530)
+VECTOR_DB_PORT=7530 cargo run --bin server
 ```
 
 ## Configuration
@@ -69,6 +81,9 @@ HAMT_ACTIVATION_THRESHOLD=1000           # Vectors count to activate HAMT shardi
 HNSW_M=16                               # HNSW connectivity parameter
 HNSW_EF_CONSTRUCTION=200                # HNSW construction quality
 IVF_N_CLUSTERS=256                      # IVF number of clusters
+
+# Server Configuration
+VECTOR_DB_PORT=7530                     # REST API port (default in code: 8080)
 ```
 
 ### Seed Phrase Setup

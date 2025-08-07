@@ -137,8 +137,8 @@ IVF_N_CLUSTERS=256                       # IVF number of clusters
 IVF_N_PROBE=16                          # IVF clusters to search
 
 # Server Configuration
-VECTOR_DB_HOST=0.0.0.0                   # Server host
-VECTOR_DB_PORT=7530                      # REST API port
+VECTOR_DB_HOST=0.0.0.0                   # Server host (default: 0.0.0.0)
+VECTOR_DB_PORT=7530                      # REST API port (default in code: 8080, recommended: 7530)
 MCP_SERVER_PORT=7531                     # MCP server port
 ADMIN_PORT=7532                          # Admin interface port
 VECTOR_DB_MAX_REQUEST_SIZE=10485760      # Max request size (10MB)
@@ -1299,6 +1299,25 @@ const result = await client.search({
 - **Request Size**: 10MB per request
 - **Query Timeout**: 30 seconds
 - **Connection Limit**: 100 concurrent connections
+
+## Implementation Status
+
+### Fully Implemented Endpoints
+- ✅ `GET /health` - Health check
+- ✅ `POST /vectors` - Insert single vector
+- ✅ `POST /vectors/batch` - Batch insert vectors
+- ✅ `GET /vectors/{id}` - Get vector by ID
+- ✅ `DELETE /vectors/{id}` - Delete vector
+- ✅ `POST /search` - Vector similarity search
+
+### Partially Implemented Endpoints
+These endpoints have placeholder implementations that return default/empty responses:
+- ⚠️ `GET /admin/statistics` - Returns zeros (TODO: implement actual statistics)
+- ⚠️ `POST /admin/migrate` - Returns zeros (TODO: implement migration logic)
+- ⚠️ `POST /admin/rebalance` - Returns zeros (TODO: implement rebalancing)
+- ⚠️ `POST /admin/backup` - Returns zeros (TODO: implement backup functionality)
+- ⚠️ `GET /stream/updates` - Returns empty stream (TODO: implement SSE events)
+- ⚠️ `GET /ws` - Returns status code only (TODO: implement WebSocket handler)
 
 ### Configuring Limits
 
