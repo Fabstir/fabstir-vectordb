@@ -1,0 +1,20 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    libssl-dev \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the pre-built binary
+COPY target/release/server /app/vector-db-server
+
+# Make executable
+RUN chmod +x /app/vector-db-server
+
+EXPOSE 7530
+
+# Actually run the server (not just tail -f)
+CMD ["/app/vector-db-server", "--port", "7530"]

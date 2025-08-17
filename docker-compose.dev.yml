@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # Development container for Vector DB
+  vector-db-dev:
+    image: fabstir-vectordb-fabstir-ai-vector-db
+    container_name: fabstir-vectordb-dev
+    volumes:
+      # Mount YOUR project directory to /workspace where Claude Code expects it
+      - .:/workspace:cached
+      # Keep cargo cache for faster builds
+      - cargo-cache:/home/developer/.cargo
+    working_dir: /workspace
+    ports:
+      - "7530-7532:7530-7532"
+    environment:
+      - RUST_LOG=info
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null  # Keep container running for development
+
+  # Production container
+  vector-db-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: vector-db-prod
+    ports:
+      - "7533:7533"
+    environment:
+      - VECTOR_DB_PORT=7533
+      - VECTOR_DB_HOST=0.0.0.0
+      - S5_MODE=real
+      - S5_PORTAL_URL=http://host.docker.internal:5522
+      - VECTOR_DIMENSION=384
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  cargo-cache:

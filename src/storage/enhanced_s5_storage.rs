@@ -48,7 +48,7 @@ impl EnhancedS5Storage {
             }
         }
 
-        let timeout = config.connection_timeout.unwrap_or(5000);
+        let timeout = config.connection_timeout.unwrap_or(30000);
         let client = Client::builder()
             .timeout(Duration::from_millis(timeout))
             .build()?;
