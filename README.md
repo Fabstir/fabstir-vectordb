@@ -1,368 +1,175 @@
 # Fabstir AI Vector Database
 
-A high-performance, decentralized vector database built on S5 storage with hybrid HNSW/IVF indexing for AI applications. Optimized for video metadata search with support for 10M+ vectors and sub-50ms search latency.
+A high-performance, decentralized vector database built on S5 storage with hybrid HNSW/IVF indexing for AI applications.
 
 ## Features
 
-- 🚀 **High Performance**: Sub-50ms search latency (p99) with support for 10M+ vectors
-- 🌐 **Decentralized Storage**: Built on S5 network for immutable, content-addressed storage
-- 🔍 **Hybrid Indexing**: HNSW for recent data, IVF for historical data with automatic migration
-- 📊 **Scalable Architecture**: HAMT sharding activates at 1000+ vectors for O(log n) lookups
-- 🔧 **Multiple Interfaces**: REST API, MCP server for LLM integration, WebSocket/SSE streaming
-- 🛡️ **Secure Configuration**: Enhanced seed phrase management with file support and validation
-- 🐳 **Docker Ready**: Full Docker and Docker Compose support for easy deployment
-
-## Implementation Status
-
-The core vector database functionality is fully implemented and working:
-- ✅ Vector CRUD operations (insert, batch insert, get, delete)
-- ✅ Vector similarity search with hybrid HNSW/IVF indexing
-- ✅ S5 storage integration with mock and real modes
-- ✅ Health monitoring and configuration management
-- ⚠️ Admin endpoints (statistics, migration, backup) have placeholder implementations
-- ⚠️ Streaming endpoints (SSE, WebSocket) have placeholder implementations
-
-See [API Documentation](docs/API.md#implementation-status) for detailed endpoint status.
+- 🚀 **High Performance**: Sub-50ms search latency with 30-second timeout for S5 operations
+- 🌐 **Decentralized Storage**: Built on S5 network via Enhanced S5.js
+- 🔍 **Hybrid Indexing**: HNSW for recent data, IVF for historical data
+- 📊 **Scalable Architecture**: HAMT sharding activates at 1000+ vectors
+- 🔧 **Multiple Interfaces**: REST API on port 7533
+- 🐳 **Docker Ready**: Production and development containers
 
 ## Quick Start
 
-### Using Docker (Recommended)
+### Production Deployment (After Reboot)
 
 ```bash
-# Clone the repository
-git clone https://github.com/fabstir/fabstir-ai-vector-db.git
-cd fabstir-ai-vector-db
+# 1. Start Enhanced S5.js
+cd ~/dev/Fabstir/partners/S5/GitHub/s5.js/
+./start-real-s5.sh &
 
-# Start with Docker Compose
-docker-compose up --build
+# 2. Start Vector DB
+cd ~/dev/Fabstir/fabstir-vectordb/
+docker-compose -f docker-compose.dev.yml up -d vector-db-prod
 
-# The services will be available at:
-# - REST API: http://localhost:7530 (configured via VECTOR_DB_PORT env var)
-# - MCP Server: http://localhost:7531
-# - Admin Interface: http://localhost:7532
+# 3. Verify
+curl http://localhost:5522/health         # Enhanced S5.js
+curl http://localhost:7533/api/v1/health  # Vector DB
 ```
 
-### Native Installation
+### Development Environment
 
 ```bash
-# Prerequisites: Rust 1.70+ and Node.js 18+
+# Start dev container with mounted workspace
+docker-compose -f docker-compose.dev.yml up -d vector-db-dev
 
-# Clone and build
-git clone https://github.com/fabstir/fabstir-ai-vector-db.git
-cd fabstir-ai-vector-db
-
-# Build the Rust backend
-cargo build --release
-
-# Run the server (default port 8080, or set VECTOR_DB_PORT=7530)
-VECTOR_DB_PORT=7530 cargo run --bin server
+# Enter container for development
+docker exec -it fabstir-vectordb-dev bash
+cd /workspace  # Your code is mounted here
 ```
 
 ## Configuration
 
+### Critical Settings
+
+- **Timeout**: 30 seconds for S5 operations (src/storage/enhanced_s5_storage.rs line 51)
+  - Must be `unwrap_or(30000)` not `unwrap_or(5000)`
+- **Vector Dimensions**: 384 (for all-MiniLM-L6-v2)
+- **Production Port**: 7533
+- **Dev Ports**: 7530-7532
+
 ### Environment Variables
 
-Create a `.env` file or set environment variables:
-
 ```bash
-# S5 Storage Configuration
-S5_MODE=mock                             # Storage mode: "mock" or "real" (default: mock)
-S5_PORTAL_URL=https://s5.vup.cx          # S5 network portal (required for real mode)
-S5_MOCK_SERVER_URL=http://localhost:5524 # Mock server URL (required for mock mode)
-S5_SEED_PHRASE_FILE=~/.s5-seed           # Path to seed phrase file (recommended)
-S5_CONNECTION_TIMEOUT=5000               # Connection timeout in ms
-S5_RETRY_ATTEMPTS=3                      # Number of retry attempts
+# S5 Configuration
+S5_MODE=real                               # Use real S5 network
+S5_PORTAL_URL=http://host.docker.internal:5522  # Enhanced S5.js endpoint
+VECTOR_DIMENSION=384                       # Vector dimensions
 
-# Vector Database Configuration
-VECTOR_DIMENSION=1536                    # Vector dimensions (default: 1536 for OpenAI)
-HAMT_ACTIVATION_THRESHOLD=1000           # Vectors count to activate HAMT sharding
-
-# Index Configuration
-HNSW_M=16                               # HNSW connectivity parameter
-HNSW_EF_CONSTRUCTION=200                # HNSW construction quality
-IVF_N_CLUSTERS=256                      # IVF number of clusters
-
-# Server Configuration
-VECTOR_DB_PORT=7530                     # REST API port (default in code: 8080)
-```
-
-### Seed Phrase Setup
-
-For production use with S5 network:
-
-```bash
-# Create seed phrase file with secure permissions
-echo "your twelve word seed phrase goes here like this example phrase" > ~/.s5-seed
-chmod 600 ~/.s5-seed
-
-# Configure environment
-export S5_MODE=real
-export S5_PORTAL_URL=https://s5.vup.cx
-export S5_SEED_PHRASE_FILE=~/.s5-seed
-```
-
-## API Usage
-
-### Basic Example
-
-```typescript
-import { VectorDBClient } from 'fabstir-ai-vector-db';
-
-const client = new VectorDBClient({
-  apiUrl: 'http://localhost:7530'
-});
-
-// Insert a vector
-const result = await client.insertVector({
-  id: 'vec_001',
-  vector: [0.1, 0.2, 0.3, ...], // 1536-dimensional vector
-  metadata: {
-    video_id: 'video_123',
-    title: 'Introduction to AI',
-    tags: ['ai', 'tutorial']
-  }
-});
-
-// Search for similar vectors
-const searchResults = await client.search({
-  vector: queryVector,
-  k: 10,
-  options: {
-    include_metadata: true,
-    score_threshold: 0.8
-  }
-});
-```
-
-### Health Check
-
-```bash
-curl http://localhost:7530/health
-```
-
-Response:
-```json
-{
-  "status": "healthy",
-  "version": "0.1.0",
-  "storage": {
-    "mode": "mock",
-    "connected": true,
-    "base_url": "http://localhost:5524"
-  },
-  "indices": {
-    "hnsw": { "healthy": true, "vector_count": 1234 },
-    "ivf": { "healthy": true, "vector_count": 5678 }
-  }
-}
+# Server Configuration  
+VECTOR_DB_PORT=7533                        # Server port
+VECTOR_DB_HOST=0.0.0.0                    # Bind to all interfaces
 ```
 
 ## Architecture
 
-The system uses a hybrid architecture optimized for both recent and historical data:
-
 ```
-┌─────────────────────┐     ┌─────────────────────┐
-│   REST API Layer    │     │   MCP Server Layer  │
-│   (Port: 7530)      │     │   (Port: 7531)      │
-└──────────┬──────────┘     └──────────┬──────────┘
-           │                           │
-           └───────────┬───────────────┘
-                       │
-            ┌──────────▼──────────┐
-            │   Hybrid Index      │
-            │  ┌─────────────┐    │
-            │  │ HNSW Index  │    │  ← Recent vectors (fast updates)
-            │  │ (Recent)    │    │
-            │  └─────────────┘    │
-            │  ┌─────────────┐    │
-            │  │ IVF Index   │    │  ← Historical vectors (space efficient)
-            │  │ (Historical)│    │
-            │  └─────────────┘    │
-            └──────────┬──────────┘
-                       │
-            ┌──────────▼──────────┐
-            │ Enhanced S5 Storage │  ← Mock/Real modes
-            │   Adapter Layer     │
-            └─────────────────────┘
+Vector DB (port 7533)
+    ↓ [HTTP PUT with 30s timeout]
+Enhanced S5.js (port 5522)
+    ↓ [S5 protocol]
+Real S5 Network (s5.vup.cx)
+    ↓ [Distributed storage]
+Permanent decentralized storage
 ```
 
-## Performance
+## API Examples
 
-### Benchmarks
-
-On standard hardware (16 CPU cores, 32GB RAM):
-
-| Operation | Vectors | Latency (p50) | Latency (p99) | Throughput |
-|-----------|---------|---------------|---------------|------------|
-| Insert    | 1M      | 0.5ms         | 2ms           | 2000 ops/s |
-| Search    | 1M      | 15ms          | 45ms          | 1000 QPS   |
-| Search    | 10M     | 25ms          | 50ms          | 500 QPS    |
-
-### Memory Usage
-
-- HNSW Index: ~500 bytes per vector
-- IVF Index: ~100 bytes per vector
-- 10M vectors: ~10GB RAM
-
-## Development
-
-### Running Tests
-
+### Insert Vector
 ```bash
-# Run all tests
-cargo test
-
-# Run specific test module
-cargo test test_configuration_management -- --test-threads=1
-
-# Run with verbose output
-cargo test -- --nocapture
+curl -X POST http://localhost:7533/api/v1/vectors \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "test-001",
+    "vector": [0.1, 0.2, 0.3],
+    "metadata": {"type": "test"}
+  }'
 ```
 
-### Building Documentation
-
+### Search Vectors
 ```bash
-# Generate Rust documentation
-cargo doc --open
-
-# Build JavaScript bindings
-cd bindings/js
-npm install
-npm run build
+curl -X POST http://localhost:7533/api/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vector": [0.1, 0.2, 0.3],
+    "k": 5
+  }'
 ```
 
-### Code Quality
+## Docker Containers
 
-```bash
-# Format code
-cargo fmt
+### Production Container (Lightweight ~100MB)
+- **Image**: fabstir-vectordb-prod:latest
+- **Port**: 7533
+- **File**: Dockerfile.production
 
-# Run linter
-cargo clippy
-
-# Type checking
-cargo check
-```
-
-## MCP Server Integration
-
-The MCP (Model Context Protocol) server enables direct LLM integration:
-
-```json
-{
-  "mcpServers": {
-    "fabstir-vector-db": {
-      "command": "node",
-      "args": ["./mcp-server.js"],
-      "env": {
-        "VECTOR_DB_URL": "http://localhost:7530",
-        "MCP_PORT": "7531"
-      }
-    }
-  }
-}
-```
-
-## Docker Deployment
-
-### Docker Compose Configuration
-
-```yaml
-version: "3.8"
-
-services:
-  fabstir-ai-vector-db:
-    build: .
-    ports:
-      - "7530:7530"  # REST API
-      - "7531:7531"  # MCP Server
-      - "7532:7532"  # Admin Interface
-    environment:
-      - S5_MODE=${S5_MODE:-mock}
-      - S5_PORTAL_URL=${S5_PORTAL_URL:-https://s5.vup.cx}
-    volumes:
-      - vector-data:/home/developer/fabstir-ai-vector-db/data
-      - ${S5_SEED_PHRASE_FILE:-/dev/null}:/app/seed.txt:ro
-
-volumes:
-  vector-data:
-```
-
-### Production Deployment
-
-For production deployments:
-
-1. Use environment-specific `.env` files
-2. Enable HTTPS with proper certificates
-3. Configure rate limiting and authentication
-4. Set up monitoring and alerting
-5. Use persistent volumes for data
+### Development Container  
+- **Image**: fabstir-vectordb-fabstir-ai-vector-db
+- **Workspace**: /workspace (mounted from host)
+- **File**: docker-compose.dev.yml
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Configuration Errors**
-   ```bash
-   # Error: S5_PORTAL_URL required for real mode
-   export S5_MODE=real
-   export S5_PORTAL_URL=https://s5.vup.cx
-   ```
-
-2. **Seed Phrase Validation**
-   ```bash
-   # Error: Invalid seed phrase: expected 12 or 24 words, got 10
-   # Ensure your seed phrase has exactly 12 or 24 words
-   ```
-
-3. **Connection Issues**
-   ```bash
-   # Increase timeout for slow connections
-   export S5_CONNECTION_TIMEOUT=10000
-   export S5_RETRY_ATTEMPTS=5
-   ```
-
-### Debug Mode
-
-Enable debug logging:
-
+### Timeout Errors
 ```bash
-export RUST_LOG=vector_db=debug,tower_http=debug
-cargo run --bin server
+# Check timeout setting
+grep "unwrap_or" src/storage/enhanced_s5_storage.rs
+# Should show: unwrap_or(30000)
 ```
 
-## Contributing
+### Port Conflicts
+```bash
+# Kill process on port
+fuser -k 7533/tcp
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+# Check what's using port
+lsof -i :7533
+```
 
-### Development Setup
+### Container Not Connecting to S5
+```bash
+# Test from inside container
+docker exec vector-db-prod curl http://host.docker.internal:5522/health
+```
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests (`cargo test`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+## Development
+
+### Building from Source
+```bash
+# Build release binary
+cargo build --release --bin server
+
+# Build Docker image
+docker build -f Dockerfile.production -t fabstir-vectordb-prod:latest .
+```
+
+### Running Tests
+```bash
+# Unit tests
+cargo test
+
+# Integration tests with real S5
+STORAGE_MODE=real cargo test --ignored
+```
+
+## Lessons Learned
+
+1. **Timeout Critical**: Real S5 operations take 5-10 seconds, not milliseconds
+2. **Container Networking**: Use `host.docker.internal` for container→host communication
+3. **Workspace Mount**: Dev container must mount to `/workspace` for Claude Code
+4. **Port Configuration**: Production uses 7533, dev uses 7530-7532
+
+## Related Projects
+
+- [Enhanced S5.js](../partners/S5/GitHub/s5.js/) - Storage backend
+- [Fabstir LLM Marketplace](../fabstir-llm-marketplace/) - Main application
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT
 
 ## Support
 
-- 📚 [Full API Documentation](docs/API.md)
-- 🐛 [Issue Tracker](https://github.com/fabstir/fabstir-ai-vector-db/issues)
-- 💬 [Discord Community](https://discord.gg/fabstir)
-- 📧 [Email Support](mailto:support@fabstir.ai)
-
-## Acknowledgments
-
-- Built on [S5 Network](https://s5.cx) for decentralized storage
-- Uses [HNSW algorithm](https://arxiv.org/abs/1603.09320) for approximate nearest neighbor search
-- Implements [IVF indexing](https://github.com/facebookresearch/faiss) for scalable similarity search
-
----
-
-Made with ❤️ by the Fabstir team
+For issues or questions, please open an issue on GitHub or check the [deployment guide](docs/DEPLOYMENT.md).
