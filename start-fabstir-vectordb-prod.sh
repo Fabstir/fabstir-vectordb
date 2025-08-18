@@ -83,7 +83,7 @@ docker run -d \
   -e VECTOR_DIMENSION=384 \
   -e RUST_LOG=info \
   --add-host host.docker.internal:host-gateway \
-  --restart unless-stopped \
+  --restart no \
   fabstir-vectordb-prod:latest
 
 # Wait for startup
