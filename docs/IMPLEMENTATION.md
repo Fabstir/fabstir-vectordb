@@ -166,33 +166,105 @@ Foundation types, S5 integration, and vector operations.
   - [ ] Metadata retrieval
   - [ ] Authentication
 
-### Phase 6: Performance & Optimisation (Week 6)
+  ### Phase 6: Multi-Tenant RAG Support (Future - Post-MVP)
 
-- [ ] **6.1 Benchmarking**
+##### Phase 6.1: Embedding Generation Only (For Compaction)
+- [ ] Add `/embeddings/generate` endpoint
+- [ ] No storage required (compute only)
+- [ ] Single shared instance sufficient
+- [ ] Mock S5 storage backend
+
+##### Phase 6.2: Read-Only Sessions (For RAG)
+- [ ] Support read-only mode flag
+- [ ] Load embeddings from S5 on startup
+- [ ] Build in-memory index
+- [ ] Provide search API
+- [ ] Auto-terminate after TTL
+
+##### Phase 6.3: Delegation Support
+- [ ] Accept delegation tokens
+- [ ] Validate token signatures
+- [ ] Scope access to user's namespace
+- [ ] Audit access logs
+
+#### Security Considerations
+
+##### Data Isolation
+- [ ] Each session runs in isolated process/container
+- [ ] No shared memory between sessions
+- [ ] Network isolation between instances
+- [ ] Automatic cleanup on expiration
+
+##### Resource Limits
+- [ ] Max sessions per host
+- [ ] Memory limits per session
+- [ ] CPU quotas
+- [ ] Disk usage monitoring
+
+#### Performance Optimizations
+
+##### Session Pooling
+- [ ] Pre-warm common models
+- [ ] Reuse terminated sessions
+- [ ] Connection pooling to S5
+- [ ] Batch embedding operations
+
+#### Success Criteria (When Implemented)
+- [ ] User data remains isolated
+- [ ] Sessions auto-terminate
+- [ ] Resource usage bounded
+- [ ] No seed phrase exposure
+- [ ] Sub-second search latency
+- [ ] Graceful degradation
+
+#### Testing Strategy (Future)
+
+##### Security Tests
+- [ ] Verify session isolation
+- [ ] Test delegation validation
+- [ ] Attempt cross-session access
+- [ ] Verify cleanup on crash
+
+##### Performance Tests
+- [ ] Measure session creation time
+- [ ] Test concurrent sessions
+- [ ] Load test search operations
+- [ ] Memory leak detection
+
+##### Integration Tests
+- [ ] End-to-end RAG flow
+- [ ] Session expiration handling
+- [ ] S5 connectivity under load
+- [ ] Graceful shutdown
+
+
+### Phase 7: Performance & Optimisation (Week 6)
+
+- [ ] **7.1 Benchmarking**
 
   - [ ] Load testing framework
   - [ ] Latency benchmarks
   - [ ] Memory profiling
   - [ ] Throughput testing
 
-- [ ] **6.2 Optimisations**
+- [ ] **7.2 Optimisations**
 
   - [ ] Query result caching
   - [ ] Connection pooling
   - [ ] Parallel index building
   - [ ] Memory-mapped files
 
-- [ ] **6.3 Production Readiness**
+- [ ] **7.3 Production Readiness**
   - [ ] Monitoring integration
   - [ ] Error handling improvements
   - [ ] Documentation
   - [ ] Deployment guides
 
-## Phase 7: S5 Storage Integration
+## Phase 8: S5 Storage Integration
 
 **Goal**: Replace mock storage with enhanced S5.js for decentralised storage on Sia network
 
-### 7.1 S5 Storage Adapter (Chunk 1 - Mock Implementation Complete)
+### 8.1 S5 Storage Adapter (Chunk 1 - Mock Implementation Complete)
 
 - [x] Create S5Storage implementation of Storage trait ✅ 2025-07-23
 - [x] Implement CBOR encoding/decoding matching s5-rs format ✅ 2025-07-23
@@ -200,7 +272,7 @@ Foundation types, S5 integration, and vector operations.
 - [x] Handle connection pooling for S5 requests (mock) ✅ 2025-07-23
 - [x] Implement retry logic for network failures (mock) ✅ 2025-07-23
 
-### 7.2 CBOR Compatibility (Chunk 1 & 2 - Complete)
+### 8.2 CBOR Compatibility (Chunk 1 & 2 - Complete)
 
 - [x] Ensure vector serialisation matches s5-rs comprehensive_vectors.rs ✅ 2025-07-23
 - [x] Validate VideoNFTMetadata encoding matches test_encode.rs outputs ✅ 2025-07-23
@@ -212,7 +284,7 @@ Foundation types, S5 integration, and vector operations.
 - [x] Add batch encoding/decoding capabilities ✅ 2025-07-23
 - [x] Test special float values and edge cases ✅ 2025-07-23
 
-### 7.3 S5 Client Integration (Chunk 3 - Complete)
+### 8.3 S5 Client Integration (Chunk 3 - Complete)
 
 - [x] Create Rust wrapper for enhanced s5.js operations ✅ 2025-07-23
 - [x] Implement uploadData for vector storage ✅ 2025-07-23
@@ -220,21 +292,21 @@ Foundation types, S5 integration, and vector operations.
 - [x] Add batch upload/download operations ✅ 2025-07-23
 - [x] Handle large vector collections (chunking/streaming) ✅ 2025-07-23
 
-### 7.4 Migration Tools
+### 8.4 Migration Tools
 
 - [ ] Create migration script from mock to S5 storage
 - [ ] Add storage backend selection (mock/S5) via config
 - [ ] Implement data export/import utilities
 - [ ] Add verification tools for migrated data
 
-### 7.5 Performance Optimisation
+### 8.5 Performance Optimisation
 
 - [ ] Add caching layer (Redis) for frequently accessed vectors
 - [x] Implement compression (zstd) for storage efficiency ✅ 2025-07-23
 - [x] Optimise batch operations for S5 network (mock) ✅ 2025-07-23
 - [ ] Add CDN/gateway support for faster retrieval
 
-### 7.6 Testing & Validation
+### 8.6 Testing & Validation
 
 - [x] Unit tests for S5Storage implementation ✅ 2025-07-23
 - [ ] Integration tests with real S5 network (Chunk 3)
