@@ -58,3 +58,10 @@ impl From<anyhow::Error> for VectorDBError {
         VectorDBError::new(err.to_string(), "INTERNAL_ERROR")
     }
 }
+
+// Convert from HybridError
+impl From<vector_db::hybrid::HybridError> for VectorDBError {
+    fn from(err: vector_db::hybrid::HybridError) -> Self {
+        VectorDBError::index_error(err.to_string())
+    }
+}
