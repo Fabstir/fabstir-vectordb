@@ -1,10 +1,14 @@
-const { describe, test } = require('node:test');
+const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { VectorDbSession } = require('../index.js');
+const { startS5Service } = require('./helpers/s5-service.cjs');
+
+// S5 service instance (started before all tests)
+let s5Service = null;
 
 // Test configuration
 const validConfig = {
-  s5Portal: 'http://localhost:5524',
+  s5Portal: 'http://localhost:5522',
   userSeedPhrase: 'test-seed-phrase-for-unit-tests-12345678901234567890',
   sessionId: 'test-session-unit-tests',
 };
@@ -25,6 +29,20 @@ function createTestVectors(count, startId = 0) {
   }
   return vectors;
 }
+
+// Start S5 service before all tests
+before(async () => {
+  console.log('Starting S5 service for tests...');
+  s5Service = await startS5Service({ port: 5522, mode: 'mock' });
+});
+
+// Stop S5 service after all tests
+after(async () => {
+  if (s5Service) {
+    console.log('Stopping S5 service...');
+    await s5Service.close();
+  }
+});
 
 describe('VectorDBSession', () => {
   describe('Session Creation', () => {

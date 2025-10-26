@@ -1,0 +1,29 @@
+{
+  "name": "@fabstir/vector-db-s5-service",
+  "version": "0.1.0",
+  "description": "S5 HTTP service for VectorDB - wraps Enhanced S5.js",
+  "main": "s5-http-service.js",
+  "type": "module",
+  "scripts": {
+    "start": "node s5-http-service.js",
+    "start:mock": "S5_MODE=mock node s5-http-service.js",
+    "start:real": "S5_MODE=real node s5-http-service.js"
+  },
+  "keywords": [
+    "s5",
+    "vector-db",
+    "storage",
+    "decentralized"
+  ],
+  "author": "Fabstir",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "peerDependencies": {
+    "@s5-dev/s5js": "*"
+  },
+  "engines": {
+    "node": ">= 16"
+  }
+}
