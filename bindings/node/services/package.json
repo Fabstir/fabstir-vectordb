@@ -20,8 +20,8 @@
   "dependencies": {
     "express": "^4.18.2"
   },
-  "peerDependencies": {
-    "@s5-dev/s5js": "*"
+  "optionalDependencies": {
+    "@parajbs-dev/s5client-js": "^0.1.0"
   },
   "engines": {
     "node": ">= 16"

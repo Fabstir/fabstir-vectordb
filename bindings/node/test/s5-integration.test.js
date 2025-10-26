@@ -1,5 +1,5 @@
 // NOTE: These integration tests require S5 storage to be available
-// at the configured portal URL (http://localhost:5522).
+// at the configured portal URL (http://127.0.0.1:5522).
 // If S5 is not running, these tests will fail with connection errors.
 // This is expected behavior - integration tests verify real S5 operations.
 
@@ -13,7 +13,7 @@ let s5Service = null;
 
 // Test configuration
 const createTestConfig = (sessionId) => ({
-  s5Portal: 'http://localhost:5522',
+  s5Portal: 'http://127.0.0.1:5522',  // Use IP to avoid Docker hostname replacement
   userSeedPhrase: 'integration-test-seed-phrase-0123456789abcdef',
   sessionId: sessionId,
 });

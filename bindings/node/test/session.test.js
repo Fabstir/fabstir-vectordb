@@ -8,7 +8,7 @@ let s5Service = null;
 
 // Test configuration
 const validConfig = {
-  s5Portal: 'http://localhost:5522',
+  s5Portal: 'http://127.0.0.1:5522',  // Use IP to avoid Docker hostname replacement
   userSeedPhrase: 'test-seed-phrase-for-unit-tests-12345678901234567890',
   sessionId: 'test-session-unit-tests',
 };

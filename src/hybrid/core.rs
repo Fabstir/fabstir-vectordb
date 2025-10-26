@@ -234,6 +234,10 @@ impl HybridIndex {
         &self.config
     }
 
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
     pub async fn insert(&self, id: VectorId, vector: Vec<f32>) -> Result<(), HybridError> {
         self.insert_with_timestamp(id, vector, Utc::now()).await
     }
@@ -537,15 +541,31 @@ impl HybridIndex {
     }
 
     pub fn get_stats(&self) -> HybridStats {
-        // Synchronous wrapper - returns empty stats
+        // Synchronous stats - use try_read() for non-blocking access
+        let recent_count = self.recent_count.try_read()
+            .map(|c| *c)
+            .unwrap_or(0);
+        let historical_count = self.historical_count.try_read()
+            .map(|c| *c)
+            .unwrap_or(0);
+        let total = recent_count + historical_count;
+
+        // Calculate memory usage from indices
+        let recent_memory = self.recent_index.try_read()
+            .map(|index| index.estimate_memory_usage().total_bytes)
+            .unwrap_or(0);
+        let historical_memory = self.historical_index.try_read()
+            .map(|index| index.estimate_memory_usage().total_bytes)
+            .unwrap_or(0);
+
         HybridStats {
-            recent_vectors: 0,
-            historical_vectors: 0,
-            total_vectors: 0,
-            avg_vector_age_ms: 0.0,
-            recent_index_memory: 0,
-            historical_index_memory: 0,
-            avg_query_time_ms: 0.0,
+            recent_vectors: recent_count,
+            historical_vectors: historical_count,
+            total_vectors: total,
+            avg_vector_age_ms: 0.0, // TODO: Calculate from timestamps
+            recent_index_memory: recent_memory,
+            historical_index_memory: historical_memory,
+            avg_query_time_ms: 0.0, // TODO: Track query times
         }
     }
 

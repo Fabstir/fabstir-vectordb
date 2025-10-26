@@ -34,8 +34,21 @@ const PORT = parseInt(process.env.S5_PORT || '5522', 10);
 const PORTAL_URL = process.env.S5_PORTAL;
 const SEED_PHRASE = process.env.S5_SEED_PHRASE;
 
-// Middleware - parse raw body for CBOR data
-app.use(express.raw({ type: '*/*', limit: '100mb' }));
+// Middleware - manually handle raw body as Buffer
+app.use((req, res, next) => {
+  let data = [];
+  req.on('data', chunk => {
+    data.push(chunk);
+  });
+  req.on('end', () => {
+    req.rawBody = Buffer.concat(data);
+    next();
+  });
+  req.on('error', (err) => {
+    console.error('Error reading body:', err);
+    next(err);
+  });
+});
 
 // Storage backend (mode-dependent)
 let s5Client = null;
@@ -52,7 +65,14 @@ async function initializeStorage() {
     // Real mode - use Enhanced S5.js
     try {
       // Dynamically import Enhanced S5.js (ESM)
-      const { S5 } = await import('@s5-dev/s5js');
+      // Try new package name first, fallback to old package
+      let S5Module;
+      try {
+        S5Module = await import('@s5-dev/s5js');
+      } catch {
+        S5Module = await import('@parajbs-dev/s5client-js');
+      }
+      const { S5 } = S5Module;
 
       console.log('Initializing Enhanced S5.js client...');
 
@@ -116,7 +136,7 @@ app.put('/s5/fs/:path(*)', async (req, res) => {
     await initializeStorage();
 
     const path = req.params.path;
-    const data = req.body;
+    const data = req.rawBody; // Use rawBody from our custom middleware
 
     console.log(`PUT /s5/fs/${path} - ${data.length} bytes`);
 
@@ -138,9 +158,9 @@ app.put('/s5/fs/:path(*)', async (req, res) => {
 });
 
 /**
- * Retrieve data from path
+ * Retrieve data from path or list directory
  * GET /s5/fs/:path
- * Returns: Raw bytes
+ * Returns: Raw bytes OR JSON array of paths (if path ends with /)
  */
 app.get('/s5/fs/:path(*)', async (req, res) => {
   try {
@@ -148,6 +168,26 @@ app.get('/s5/fs/:path(*)', async (req, res) => {
 
     const path = req.params.path;
     console.log(`GET /s5/fs/${path}`);
+
+    // Check if this is a directory listing request (path ends with /)
+    if (path.endsWith('/')) {
+      // List directory contents
+      if (MODE === 'real') {
+        // For real S5, we'd need to implement directory listing
+        // For now, return empty array
+        res.json([]);
+        return;
+      } else {
+        // Mock mode - list keys with matching prefix
+        // Return full paths (matching Rust MockS5Storage behavior)
+        const prefix = path;
+        const matches = Array.from(mockStorage.keys())
+          .filter(k => k.startsWith(prefix));
+
+        res.json(matches);
+        return;
+      }
+    }
 
     let data;
 
@@ -240,7 +280,7 @@ async function start() {
 
     app.listen(PORT, () => {
       console.log('='.repeat(60));
-      console.log('S5 HTTP Service');
+      console.log('S5 HTTP Service [v2-DEBUG]'); // VERSION MARKER
       console.log('='.repeat(60));
       console.log(`Mode:          ${MODE}`);
       console.log(`Port:          ${PORT}`);

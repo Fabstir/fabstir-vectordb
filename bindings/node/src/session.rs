@@ -228,7 +228,8 @@ impl VectorDBSession {
         let mut index_guard = index.write().await;
 
         // Initialize index if not already initialized (first time adding vectors)
-        if !vectors.is_empty() {
+        // IMPORTANT: Only initialize once! Multiple calls to initialize() will clear the index.
+        if !index_guard.is_initialized() && !vectors.is_empty() {
             // Prepare training data from the first batch
             let training_data: Vec<Vec<f32>> = vectors
                 .iter()
@@ -265,8 +266,9 @@ impl VectorDBSession {
                 .await
                 .map_err(|e| VectorDBError::index_error(format!("Failed to add vector: {}", e)))?;
 
-            // Store metadata
-            metadata_guard.insert(input.id.clone(), input.metadata);
+            // Store metadata using VectorId's string representation (not original input.id)
+            // This ensures metadata lookup works correctly in search results
+            metadata_guard.insert(vector_id.to_string(), input.metadata);
         }
 
         Ok(())
