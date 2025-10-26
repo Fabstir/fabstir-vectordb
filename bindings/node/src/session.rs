@@ -18,7 +18,7 @@ use crate::{
 struct SessionState {
     session_id: String,
     index: Arc<RwLock<HybridIndex>>,
-    metadata: Arc<RwLock<HashMap<String, String>>>, // vector_id -> JSON metadata
+    metadata: Arc<RwLock<HashMap<String, serde_json::Value>>>, // vector_id -> metadata
     config: VectorDBConfig,
     vector_dimension: Option<usize>,
 }
@@ -109,7 +109,7 @@ impl VectorDBSession {
                 let metadata = metadata_map
                     .get(&vector_id_str)
                     .cloned()
-                    .unwrap_or_else(|| String::from("{}"));
+                    .unwrap_or_else(|| serde_json::json!({}));
 
                 SearchResult {
                     id: vector_id_str,

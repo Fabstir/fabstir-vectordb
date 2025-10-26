@@ -1,4 +1,5 @@
 use napi_derive::napi;
+use serde_json;
 
 #[napi(object)]
 pub struct VectorDBConfig {
@@ -44,8 +45,8 @@ pub struct VectorInput {
     /// Dense embedding vector
     pub vector: Vec<f64>,
 
-    /// Associated metadata (JSON string)
-    pub metadata: String,
+    /// Associated metadata (any valid JSON value)
+    pub metadata: serde_json::Value,
 }
 
 #[napi(object)]
@@ -56,8 +57,8 @@ pub struct SearchResult {
     /// Similarity score (0-1)
     pub score: f64,
 
-    /// Associated metadata (JSON string)
-    pub metadata: String,
+    /// Associated metadata (any valid JSON value)
+    pub metadata: serde_json::Value,
 
     /// Original vector (if requested)
     pub vector: Option<Vec<f64>>,

@@ -5,83 +5,90 @@
 
 export interface VectorDbConfig {
   /** S5 portal URL (e.g., "http://localhost:5524") */
-  s5Portal: string
+  s5Portal: string;
   /** User's blockchain-derived seed phrase */
-  userSeedPhrase: string
+  userSeedPhrase: string;
   /** Unique session identifier */
-  sessionId: string
+  sessionId: string;
   /** Optional: Memory budget in MB (default: 512) */
-  memoryBudgetMb?: number
+  memoryBudgetMb?: number;
   /** Optional: Enable debug logging (default: false) */
-  debug?: boolean
+  debug?: boolean;
 }
 export interface LoadOptions {
   /** Load HNSW immediately, IVF on-demand (default: true) */
-  lazyLoad?: boolean
+  lazyLoad?: boolean;
   /** Override session memory budget */
-  memoryBudgetMb?: number
+  memoryBudgetMb?: number;
 }
 export interface SearchOptions {
   /** Minimum similarity score (0-1, default: 0.7) */
-  threshold?: number
+  threshold?: number;
   /** Include vectors in results (default: false) */
-  includeVectors?: boolean
+  includeVectors?: boolean;
 }
 export interface VectorInput {
   /** Unique identifier */
-  id: string
+  id: string;
   /** Dense embedding vector */
-  vector: Array<number>
-  /** Associated metadata (JSON string) */
-  metadata: string
+  vector: Array<number>;
+  /** Associated metadata (any valid JSON value) */
+  metadata: any;
 }
 export interface SearchResult {
   /** Vector ID */
-  id: string
+  id: string;
   /** Similarity score (0-1) */
-  score: number
-  /** Associated metadata (JSON string) */
-  metadata: string
+  score: number;
+  /** Associated metadata (any valid JSON value) */
+  metadata: any;
   /** Original vector (if requested) */
-  vector?: Array<number>
+  vector?: Array<number>;
 }
 export interface SessionStats {
   /** Total vectors in index */
-  vectorCount: number
+  vectorCount: number;
   /** Current memory usage in MB */
-  memoryUsageMb: number
+  memoryUsageMb: number;
   /** Active index type */
-  indexType: string
+  indexType: string;
   /** Vectors in HNSW index */
-  hnswVectorCount?: number
+  hnswVectorCount?: number;
   /** Vectors in IVF index */
-  ivfVectorCount?: number
+  ivfVectorCount?: number;
 }
-export declare function getVersion(): string
-export declare function getPlatformInfo(): PlatformInfo
+export declare function getVersion(): string;
+export declare function getPlatformInfo(): PlatformInfo;
 export interface PlatformInfo {
-  platform: string
-  arch: string
+  platform: string;
+  arch: string;
 }
-export type VectorDBError = VectorDbError
+export type VectorDBError = VectorDbError;
 export declare class VectorDbError {
-  message: string
-  code: string
+  message: string;
+  code: string;
 }
-export type VectorDBSession = VectorDbSession
+export type VectorDBSession = VectorDbSession;
 export declare class VectorDbSession {
   /** Create a new vector DB session */
-  static create(config: VectorDBConfig): Promise<VectorDbSession>
+  static create(config: VectorDBConfig): Promise<VectorDbSession>;
   /** Load user's vectors from S5 */
-  loadUserVectors(cid: string, options?: LoadOptions | undefined | null): Promise<void>
+  loadUserVectors(
+    cid: string,
+    options?: LoadOptions | undefined | null,
+  ): Promise<void>;
   /** Search for similar vectors */
-  search(queryVector: Array<number>, k: number, options?: SearchOptions | undefined | null): Promise<Array<SearchResult>>
+  search(
+    queryVector: Array<number>,
+    k: number,
+    options?: SearchOptions | undefined | null,
+  ): Promise<Array<SearchResult>>;
   /** Add vectors to the index */
-  addVectors(vectors: Array<VectorInput>): Promise<void>
+  addVectors(vectors: Array<VectorInput>): Promise<void>;
   /** Save index to S5 */
-  saveToS5(): Promise<string>
+  saveToS5(): Promise<string>;
   /** Get session statistics */
-  getStats(): SessionStats
+  getStats(): SessionStats;
   /** Destroy session and clear memory */
-  destroy(): Promise<void>
+  destroy(): Promise<void>;
 }

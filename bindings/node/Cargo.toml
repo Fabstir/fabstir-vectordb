@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 vector-db = { path = "../..", default-features = false }
 
 # napi-rs for Node.js bindings
-napi = { version = "2.16", features = ["tokio_rt", "async", "napi8"] }
+napi = { version = "2.16", features = ["tokio_rt", "async", "napi8", "serde-json"] }
 napi-derive = "2.16"
 
 # Async runtime
