@@ -2,7 +2,25 @@
 
 **Target Audience:** SDK Developers
 **Last Updated:** 2025-10-26
-**Status:** Implementation Ready
+**Status:** Phase 2 Complete - Ready for Integration
+
+## ⚠️ Current Implementation Status
+
+**Phase 2 Complete (v0.1.0)** - Ready for integration:
+- ✅ Session management (create, destroy)
+- ✅ Add vectors with auto-initialization
+- ✅ Search with similarity scoring and threshold filtering
+- ✅ Metadata storage/retrieval (JSON string format)
+- ✅ Real-time statistics
+
+**Phase 3 (Future)** - Not yet implemented:
+- ⏸️ `loadUserVectors()` - Throws "not implemented" error (requires serialization)
+- ⏸️ `saveToS5()` - Throws "not implemented" error (requires serialization)
+
+**What this means for you:**
+- You can use the vector DB for **in-memory RAG during sessions**
+- Vectors are cleared when session ends (stateless hosts)
+- S5 persistence will be added in Phase 3 without breaking your integration
 
 ## Table of Contents
 
@@ -213,7 +231,9 @@ const session = await VectorDBSession.create({
 
 #### Instance Methods
 
-##### `session.loadUserVectors(cid, options?)`
+##### `session.loadUserVectors(cid, options?)` ⏸️ **Phase 3 - Not Implemented**
+
+**Status:** Throws error "not implemented" - requires HybridIndex serialization (Phase 3)
 
 Loads user's vector index from S5 storage.
 
@@ -228,31 +248,17 @@ interface LoadOptions {
 
 **Returns:** `Promise<void>`
 
-**Example:**
+**Current Behavior:**
 
 ```typescript
-// Lazy load (recommended for large datasets)
-await session.loadUserVectors(userVectorCID, {
-  lazyLoad: true,
-  memoryBudgetMB: 512,
-});
-
-// Full load (for smaller datasets or when latency is critical)
-await session.loadUserVectors(userVectorCID, {
-  lazyLoad: false,
-});
+await session.loadUserVectors(userVectorCID);
+// Throws: VectorDBError: "load_user_vectors not yet implemented - requires index serialization support"
 ```
 
-**Load Strategy:**
-
-- **Lazy Mode (default):** Loads HNSW index + IVF centroids immediately, loads IVF clusters on-demand during search
-- **Full Mode:** Loads entire index into memory upfront
-
-**Performance:**
-
-- Lazy mode: 2-5s initial load for 1M vectors
-- Full mode: 10-30s initial load for 1M vectors
-- Memory usage: ~200MB per 100K vectors (384-dim)
+**Future Implementation (Phase 3):**
+- Will deserialize HybridIndex from S5 CBOR format
+- Lazy/full load modes for memory optimization
+- Load time: 2-5s for 1M vectors (lazy mode)
 
 ---
 
@@ -277,7 +283,7 @@ Promise<
   Array<{
     id: string; // Vector ID
     score: number; // Similarity score (0-1, higher is more similar)
-    metadata: any; // Associated metadata
+    metadata: string; // JSON string - use JSON.parse() to get object
     vector?: number[]; // Original vector (if includeVectors: true)
   }>
 >;
@@ -293,7 +299,10 @@ const results = await session.search(queryEmbedding, 5, {
 
 for (const result of results) {
   console.log(`ID: ${result.id}, Score: ${result.score}`);
-  console.log(`Text: ${result.metadata.text}`);
+
+  // Parse JSON metadata
+  const metadata = JSON.parse(result.metadata);
+  console.log(`Text: ${metadata.text}`);
 }
 ```
 
@@ -315,7 +324,7 @@ Adds new vectors to the session index (for compaction feature).
 interface VectorInput {
   id: string; // Unique identifier
   vector: number[]; // Dense embedding vector
-  metadata: any; // Associated metadata (must be JSON-serializable)
+  metadata: string; // JSON string (use JSON.stringify() to convert objects)
 }
 ```
 
@@ -328,12 +337,12 @@ await session.addVectors([
   {
     id: 'doc1_chunk1',
     vector: [0.1, 0.2, ..., 0.5], // 384-dim for all-MiniLM-L6-v2
-    metadata: {
+    metadata: JSON.stringify({
       text: 'This is the content...',
       documentId: 'doc1',
       chunkIndex: 0,
       timestamp: Date.now()
-    }
+    })
   },
   // ... more vectors
 ]);
@@ -347,30 +356,26 @@ await session.addVectors([
 
 ---
 
-##### `session.saveToS5()`
+##### `session.saveToS5()` ⏸️ **Phase 3 - Not Implemented**
+
+**Status:** Throws error "not implemented" - requires HybridIndex serialization (Phase 3)
 
 Saves the current index state to S5 storage.
 
 **Returns:** `Promise<string>` - Returns new CID
 
-**Example:**
+**Current Behavior:**
 
 ```typescript
 const newCID = await session.saveToS5();
-console.log("Vectors saved to S5:", newCID);
-
-// Store CID for future sessions
-await storageManager.updateUserSettings({
-  vectorIndexCID: newCID,
-});
+// Throws: VectorDBError: "save_to_s5 not yet implemented - requires index serialization support"
 ```
 
-**Performance:**
-
-- Serializes index to CBOR format
-- Uploads to S5 with retry logic
-- Returns content-addressed CID
-- Time: ~5-20s depending on index size
+**Future Implementation (Phase 3):**
+- Will serialize HybridIndex to CBOR format
+- Upload to S5 with retry logic
+- Return content-addressed CID
+- Save time: ~5-20s depending on index size
 
 ---
 
@@ -453,6 +458,7 @@ export class VectorRAGManager {
 
   /**
    * Initialize RAG session for a user
+   * NOTE: loadUserVectors() not implemented in Phase 2 - session starts empty
    */
   async initializeSession(
     sessionId: string,
@@ -467,18 +473,13 @@ export class VectorRAGManager {
       memoryBudgetMB: this.config.memoryBudgetMB || 512,
     });
 
-    // Load user's vectors if they exist
+    // NOTE: loadUserVectors() not implemented in Phase 2
+    // Session starts empty - vectors must be added via addVectors()
+    // Phase 3 will enable loading from S5
     if (userVectorCID) {
-      await this.session.loadUserVectors(userVectorCID, {
-        lazyLoad: this.config.lazyLoad ?? true,
-      });
-
-      const stats = this.session.getStats();
-      console.log(
-        `RAG initialized: ${stats.vectorCount} vectors, ${stats.memoryUsageMB} MB`
-      );
+      console.log(`RAG initialized: CID ${userVectorCID} noted but not loaded (Phase 3 feature)`);
     } else {
-      console.log("RAG initialized: No existing vectors for this user");
+      console.log("RAG initialized: Starting with empty index");
     }
   }
 
@@ -499,11 +500,15 @@ export class VectorRAGManager {
       includeVectors: false,
     });
 
-    return results.map((r) => ({
-      text: r.metadata.text || "",
-      score: r.score,
-      metadata: r.metadata,
-    }));
+    return results.map((r) => {
+      // Parse JSON metadata
+      const metadata = JSON.parse(r.metadata);
+      return {
+        text: metadata.text || "",
+        score: r.score,
+        metadata,
+      };
+    });
   }
 
   /**
@@ -520,17 +525,26 @@ export class VectorRAGManager {
       throw new Error("RAG session not initialized");
     }
 
-    await this.session.addVectors(vectors);
+    // Convert metadata objects to JSON strings
+    const vectorsWithJsonMetadata = vectors.map(v => ({
+      ...v,
+      metadata: JSON.stringify(v.metadata)
+    }));
+
+    await this.session.addVectors(vectorsWithJsonMetadata);
   }
 
   /**
    * Save updated index to S5
+   * NOTE: saveToS5() not implemented in Phase 2
    */
   async saveIndex(): Promise<string> {
     if (!this.session) {
       throw new Error("RAG session not initialized");
     }
 
+    // NOTE: This will throw "not implemented" error in Phase 2
+    // Phase 3 will enable saving to S5
     return await this.session.saveToS5();
   }
 
@@ -581,15 +595,10 @@ export class SessionManager {
       config
     );
 
-    // Initialize RAG if enabled and user has vectors
+    // Initialize RAG if enabled (Phase 2: in-memory only)
     if (config.enableRAG !== false) {
       // Default to true
       try {
-        // Get user's vector CID from storage
-        const storageManager = await this.sdk.getStorageManager();
-        const userSettings = await storageManager.getUserSettings();
-        const userVectorCID = userSettings?.vectorIndexCID;
-
         // Initialize RAG manager
         this.ragManager = new VectorRAGManager({
           s5Config: this.sdk.config.s5Config || {},
@@ -597,14 +606,16 @@ export class SessionManager {
           lazyLoad: config.ragLazyLoad ?? true,
         });
 
-        // Initialize session
+        // Phase 2: Initialize empty session (no S5 loading)
+        // Vectors can be added during the session using addDocuments()
+        // but will not persist after session ends
         await this.ragManager.initializeSession(
           sessionId.toString(),
-          this.sdk.userSeedPhrase, // User's blockchain-derived seed
-          userVectorCID
+          this.sdk.userSeedPhrase // User's blockchain-derived seed
+          // userVectorCID omitted - Phase 3 will add S5 loading
         );
 
-        console.log("RAG enabled for session", sessionId.toString());
+        console.log("RAG enabled for session (in-memory)", sessionId.toString());
       } catch (error) {
         console.warn(
           "RAG initialization failed, continuing without RAG:",
@@ -783,7 +794,7 @@ export class SessionManager {
 
 ## RAG Flow Examples
 
-### Example 1: Basic RAG Session
+### Example 1: Basic RAG Session (Phase 2 - In-Memory)
 
 ```typescript
 import { FabstirSDKCore } from "@fabstir/sdk-core";
@@ -800,7 +811,7 @@ await sdk.authenticate("signer", { signer: userSigner });
 
 const sessionManager = sdk.getSessionManager();
 
-// Start session with RAG enabled (default)
+// Start session with RAG enabled
 const { sessionId } = await sessionManager.startSession(
   modelHash,
   hostAddress,
@@ -809,39 +820,42 @@ const { sessionId } = await sessionManager.startSession(
     pricePerToken: 200,
     duration: 3600,
     proofInterval: 100,
-    enableRAG: true, // Explicitly enable (default behavior)
+    enableRAG: true,
     ragMemoryBudgetMB: 512,
-    ragLazyLoad: true,
   }
 );
 
-// Send prompts - RAG automatically retrieves context
+// NOTE: Phase 2 limitation - no pre-existing vectors loaded
+// Session starts with empty index
+// You must add vectors during the session (see Example 2)
+
+// Send prompts - RAG will search if vectors were added this session
 const response1 = await sessionManager.sendPrompt(
   sessionId,
   "What did I say about climate change?"
 );
-// → Searches user's vectors for "climate change" context
-// → Augments prompt with relevant past conversations/documents
-// → Sends to LLM
+// → In Phase 2: searches only vectors added during THIS session
+// → In Phase 3: will search vectors loaded from S5
 
 console.log(response1);
 
-// Multi-turn conversation with persistent context
+// Multi-turn conversation with session-cached vectors
 const response2 = await sessionManager.sendPrompt(
   sessionId,
   "Can you summarize the key points?"
 );
-// → Uses same loaded vectors (no reload needed)
+// → Uses same in-memory vectors (no reload needed)
 
 // End session - cleanup happens automatically
 await sessionManager.endSession(sessionId);
 // → Vector DB session destroyed
 // → Host memory cleared
+// → Vectors are NOT persisted (Phase 3 feature)
 ```
 
 ---
 
-### Example 2: Document Ingestion with Compaction
+### Example 2: Document Ingestion with Compaction (Phase 2)
 
 ```typescript
 import { VectorRAGManager } from "fabstir-llm-sdk/rag";
@@ -866,19 +880,19 @@ const ragManager = new VectorRAGManager({
   s5Config: sdk.config.s5Config,
 });
 
-// Initialize with user's existing vectors (if any)
+// Initialize session (starts empty in Phase 2)
 await ragManager.initializeSession(
   sessionId.toString(),
   userSeedPhrase,
-  existingVectorCID
+  undefined // No CID - Phase 2 doesn't support loading
 );
 
-// Add new vectors
+// Add new vectors (VectorRAGManager handles JSON.stringify)
 await ragManager.addVectors(
   chunks.map((chunk, i) => ({
     id: `doc_${documentId}_chunk_${i}`,
     vector: embeddings[i],
-    metadata: {
+    metadata: {  // Pass as object, VectorRAGManager converts to JSON string
       text: chunk,
       documentId,
       chunkIndex: i,
@@ -887,17 +901,15 @@ await ragManager.addVectors(
   }))
 );
 
-// Save to S5
-const newCID = await ragManager.saveIndex();
-console.log("Updated vectors saved:", newCID);
+// NOTE: saveIndex() not implemented in Phase 2
+// Vectors exist only during this session
+// Phase 3 will enable saving to S5
 
-// Update user settings with new CID
-const storageManager = await sdk.getStorageManager();
-await storageManager.updateUserSettings({
-  vectorIndexCID: newCID,
-});
+console.log("Vectors added to in-memory index for this session");
+const stats = ragManager.getStats();
+console.log(`${stats.vectorCount} vectors loaded, ${stats.memoryUsageMB} MB`);
 
-// Cleanup
+// Cleanup (vectors will be cleared from memory)
 await ragManager.cleanup();
 ```
 
@@ -1002,7 +1014,7 @@ describe("VectorRAGManager", () => {
       undefined
     );
 
-    // Add test vectors
+    // Add test vectors (metadata is objects, VectorRAGManager handles JSON.stringify)
     await ragManager.addVectors([
       {
         id: "vec1",
@@ -1023,6 +1035,7 @@ describe("VectorRAGManager", () => {
     expect(results.length).toBeGreaterThan(0);
     expect(results[0]).toHaveProperty("text");
     expect(results[0]).toHaveProperty("score");
+    expect(results[0].text).toBe("Test document 1"); // VectorRAGManager parses JSON
   });
 
   it("should cleanup properly", async () => {
@@ -1133,11 +1146,12 @@ describe("Memory Leak Detection", () => {
         undefined
       );
 
+      // VectorRAGManager handles JSON.stringify internally
       await ragManager.addVectors([
         {
           id: `vec-${i}`,
           vector: new Array(384).fill(Math.random()),
-          metadata: { text: `Document ${i}` },
+          metadata: { text: `Document ${i}` }, // Pass as object
         },
       ]);
 
