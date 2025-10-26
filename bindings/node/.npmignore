@@ -1,0 +1,7 @@
+src/
+Cargo.toml
+Cargo.lock
+build.rs
+target/
+*.node.debug
+test/

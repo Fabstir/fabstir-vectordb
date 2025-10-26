@@ -1,3 +1,9 @@
+[workspace]
+members = [
+    ".",
+    "bindings/node"
+]
+
 [package]
 name = "vector-db"
 version = "0.1.0"
