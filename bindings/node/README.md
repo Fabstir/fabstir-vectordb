@@ -98,14 +98,37 @@ For detailed integration instructions, see `../../docs/sdk-reference/VECTOR_DB_I
 
 **Phase 1: Infrastructure** ✅ Complete
 - napi-rs setup
-- Type definitions
-- Basic skeleton
+- TypeScript definitions
+- Build system
 
-**Phase 2: Core Implementation** 🔨 In Progress
-- S5 storage integration
-- Hybrid HNSW/IVF indexing
-- Lazy loading
-- Memory management
+**Phase 2: Core Implementation** ✅ Complete
+- ✅ Session management (create, destroy)
+- ✅ Add vectors with auto-initialization
+- ✅ Search with similarity scoring
+- ✅ Metadata storage and retrieval
+- ✅ Statistics (vector count, memory usage, index distribution)
+- ⏸️ S5 load/save (requires serialization - Phase 3)
+
+## Current Capabilities
+
+**What Works:**
+- Create session with HybridIndex
+- Add vectors (any dimension, validated)
+- Search for similar vectors
+- Get real-time statistics
+- Store and retrieve metadata
+
+**Limitations:**
+- In-memory only (no persistence yet)
+- `loadUserVectors()` and `saveToS5()` throw "not implemented" errors
+- Metadata must be JSON strings (use `JSON.stringify()` when adding, `JSON.parse()` when retrieving)
+
+## Next Phase
+
+**Phase 3: S5 Persistence** will add:
+- Serialize/deserialize HybridIndex
+- Real S5 storage integration
+- Load/save vector indices to decentralized storage
 
 ## License
 

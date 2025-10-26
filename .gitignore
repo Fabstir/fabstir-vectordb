@@ -89,3 +89,7 @@ bindings/js/dist/
 bindings/js/lib/
 bindings/js/*.tgz
 docker-compose.override.yml
+
+# Platform-specific
+*.node
+target/

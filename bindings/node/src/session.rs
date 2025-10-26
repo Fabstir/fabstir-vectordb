@@ -1,5 +1,6 @@
 use napi::Result;
 use napi_derive::napi;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -17,6 +18,7 @@ use crate::{
 struct SessionState {
     session_id: String,
     index: Arc<RwLock<HybridIndex>>,
+    metadata: Arc<RwLock<HashMap<String, String>>>, // vector_id -> JSON metadata
     config: VectorDBConfig,
     vector_dimension: Option<usize>,
 }
@@ -43,6 +45,7 @@ impl VectorDBSession {
         let state = SessionState {
             session_id: config.session_id.clone(),
             index: Arc::new(RwLock::new(index)),
+            metadata: Arc::new(RwLock::new(HashMap::new())),
             config,
             vector_dimension: None,
         };
@@ -87,6 +90,10 @@ impl VectorDBSession {
         let results = index.search(&query_f32, k as usize)
             .await
             .map_err(|e| VectorDBError::index_error(format!("Search failed: {}", e)))?;
+        drop(index); // Release read lock
+
+        // Get metadata map
+        let metadata_map = state.metadata.read().await;
 
         // Convert results to SearchResult format
         let search_results: Vec<SearchResult> = results
@@ -96,11 +103,20 @@ impl VectorDBSession {
                 let score = 1.0 - r.distance;
                 score >= threshold
             })
-            .map(|r| SearchResult {
-                id: r.vector_id.to_string(),
-                score: (1.0 - r.distance) as f64, // Convert distance to similarity score
-                metadata: String::from("{}"), // TODO: Add metadata support
-                vector: None, // TODO: Add vector inclusion based on options
+            .map(|r| {
+                let vector_id_str = r.vector_id.to_string();
+                // Retrieve metadata or use empty JSON object
+                let metadata = metadata_map
+                    .get(&vector_id_str)
+                    .cloned()
+                    .unwrap_or_else(|| String::from("{}"));
+
+                SearchResult {
+                    id: vector_id_str,
+                    score: (1.0 - r.distance) as f64, // Convert distance to similarity score
+                    metadata,
+                    vector: None, // TODO: Add vector inclusion based on options
+                }
             })
             .collect();
 
@@ -148,7 +164,10 @@ impl VectorDBSession {
             }
         }
 
-        // Insert vectors
+        // Insert vectors and store metadata
+        let metadata_map = state.metadata.clone();
+        let mut metadata_guard = metadata_map.write().await;
+
         for input in vectors {
             let vector_id = VectorId::from_string(&input.id);
             let vector_f32 = utils::js_array_to_vec_f32(input.vector);
@@ -162,9 +181,13 @@ impl VectorDBSession {
                 }
             }
 
-            index_guard.insert(vector_id, vector_f32)
+            // Insert vector into index
+            index_guard.insert(vector_id.clone(), vector_f32)
                 .await
                 .map_err(|e| VectorDBError::index_error(format!("Failed to add vector: {}", e)))?;
+
+            // Store metadata
+            metadata_guard.insert(input.id.clone(), input.metadata);
         }
 
         Ok(())
