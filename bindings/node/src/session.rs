@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use vector_db::{
     core::types::VectorId,
     hybrid::{HybridIndex, HybridConfig},
+    storage::{EnhancedS5Storage, S5StorageConfig, StorageMode},
 };
 
 use crate::{
@@ -19,6 +20,7 @@ struct SessionState {
     session_id: String,
     index: Arc<RwLock<HybridIndex>>,
     metadata: Arc<RwLock<HashMap<String, serde_json::Value>>>, // vector_id -> metadata
+    storage: Arc<EnhancedS5Storage>,
     config: VectorDBConfig,
     vector_dimension: Option<usize>,
 }
@@ -37,6 +39,25 @@ impl VectorDBSession {
         if config.session_id.is_empty() {
             return Err(VectorDBError::invalid_config("session_id is required").into());
         }
+        if config.s5_portal.is_empty() {
+            return Err(VectorDBError::invalid_config("s5_portal is required").into());
+        }
+        if config.user_seed_phrase.is_empty() {
+            return Err(VectorDBError::invalid_config("user_seed_phrase is required").into());
+        }
+
+        // Initialize S5 storage
+        let s5_config = S5StorageConfig {
+            mode: StorageMode::Real,
+            portal_url: Some(config.s5_portal.clone()),
+            seed_phrase: Some(config.user_seed_phrase.clone()),
+            mock_server_url: None,
+            connection_timeout: Some(30000), // 30 seconds
+            retry_attempts: Some(3),
+        };
+
+        let storage = EnhancedS5Storage::new(s5_config)
+            .map_err(|e| VectorDBError::storage_error(format!("Failed to initialize S5 storage: {}", e)))?;
 
         // Create hybrid index with default configuration
         let hybrid_config = HybridConfig::default();
@@ -46,6 +67,7 @@ impl VectorDBSession {
             session_id: config.session_id.clone(),
             index: Arc::new(RwLock::new(index)),
             metadata: Arc::new(RwLock::new(HashMap::new())),
+            storage: Arc::new(storage),
             config,
             vector_dimension: None,
         };

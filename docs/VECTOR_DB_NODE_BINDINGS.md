@@ -1109,19 +1109,19 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured
 
 **Completed:** Metadata fields now use `serde_json::Value` instead of JSON strings. TypeScript definitions show `metadata: any` allowing native JavaScript objects. Added `serde-json` feature to napi dependency.
 
-#### 4.2: Integrate EnhancedS5Storage
-- [ ] Update SessionState in session.rs:
-  - [ ] Remove standalone metadata HashMap
-  - [ ] Add `storage: Arc<EnhancedS5Storage>`
-- [ ] Update `create()` factory:
-  - [ ] Initialize EnhancedS5Storage with config
-  - [ ] Add error handling for S5 connection
-- [ ] Update `addVectors()`:
-  - [ ] Remove JSON.stringify requirement
-  - [ ] Pass metadata directly as serde_json::Value
-- [ ] Update `search()`:
-  - [ ] Return metadata as serde_json::Value
-  - [ ] Remove JSON.parse requirement
+#### 4.2: Integrate EnhancedS5Storage ✅ COMPLETE
+- [x] Update SessionState in session.rs:
+  - [x] Keep standalone metadata HashMap (HybridIndex doesn't store metadata natively)
+  - [x] Add `storage: Arc<EnhancedS5Storage>`
+- [x] Update `create()` factory:
+  - [x] Initialize EnhancedS5Storage with config
+  - [x] Add error handling for S5 connection
+- [x] Update `addVectors()`:
+  - [x] Already uses serde_json::Value from Phase 4.1
+- [x] Update `search()`:
+  - [x] Already returns serde_json::Value from Phase 4.1
+
+**Completed:** Added EnhancedS5Storage to SessionState with proper initialization. Config validation includes s5_portal and user_seed_phrase. Storage will be used in Phases 4.3 and 4.4 for persistence operations.
 
 #### 4.3: Implement Real loadUserVectors()
 - [ ] Remove "not implemented" error
