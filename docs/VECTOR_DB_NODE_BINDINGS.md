@@ -986,43 +986,218 @@ MIT
 
 ## Implementation Checklist
 
-### Phase 1: Setup ✅
-- [ ] Create directory structure
-- [ ] Configure Cargo workspace
-- [ ] Set up napi-rs dependencies
-- [ ] Create package.json with build scripts
+**Approach:** Strict TDD Bounded Autonomy - Each phase must complete with passing tests before proceeding
 
-### Phase 2: Core Implementation 🔨
-- [ ] Implement error types
-- [ ] Implement type conversions
-- [ ] Implement VectorDBSession
-  - [ ] create() factory
-  - [ ] loadUserVectors()
-  - [ ] search()
-  - [ ] addVectors()
-  - [ ] saveToS5()
-  - [ ] getStats()
-  - [ ] destroy()
+### Phase 1: Setup ✅ COMPLETE
+- [x] Create directory structure
+- [x] Configure Cargo workspace
+- [x] Set up napi-rs dependencies
+- [x] Create package.json with build scripts
+- [x] Auto-generated TypeScript definitions
 
-### Phase 3: Integration 🔧
-- [ ] Wire up EnhancedS5Storage
-- [ ] Wire up HybridIndex
-- [ ] Implement lazy loading
-- [ ] Add memory budget tracking
-- [ ] Error handling and logging
+### Phase 2: Minimal Bindings Implementation ✅ COMPLETE
+- [x] Implement error types (bindings/node/src/error.rs)
+- [x] Implement type conversions (bindings/node/src/types.rs)
+- [x] Implement minimal VectorDBSession
+  - [x] create() factory
+  - [x] addVectors() with metadata HashMap
+  - [x] search() with metadata retrieval
+  - [x] getStats()
+  - [x] destroy()
+  - [x] loadUserVectors() - stub (throws "not implemented")
+  - [x] saveToS5() - stub (throws "not implemented")
+- [x] Build successful (18MB tarball created)
+- [x] Updated VECTOR_DB_INTEGRATION.md to reflect Phase 2 limitations
 
-### Phase 4: Build & Test 🧪
-- [ ] TypeScript definitions
-- [ ] Unit tests
-- [ ] Integration tests (with S5)
-- [ ] Memory leak tests
-- [ ] Build for x86_64-linux
-- [ ] Build for aarch64-linux
+**Status:** Delivered in-memory-only bindings to continue development
 
-### Phase 5: Distribution 📦
-- [ ] Create tarball
-- [ ] Documentation
-- [ ] Integration guide for SDK
+---
+
+### Phase 3: HybridIndex Serialization 🔨 IN PROGRESS
+
+**Goal:** Enable HybridIndex to serialize/deserialize for S5 persistence
+
+#### 3.1: Create Persistence Module ✅ COMPLETE
+- [x] Create `src/hybrid/persistence.rs`
+- [x] Define `PersistenceError` enum (follow HNSW/IVF pattern)
+- [x] Define `HybridMetadata` struct with:
+  - [x] version: u32
+  - [x] config: HybridConfig
+  - [x] recent_count: usize
+  - [x] historical_count: usize
+  - [x] total_vectors: usize
+  - [x] timestamp: DateTime<Utc>
+- [x] Implement `HybridMetadata::from_index(index: &HybridIndex)`
+- [x] Implement `HybridMetadata::to_cbor() -> Result<Vec<u8>>`
+- [x] Implement `HybridMetadata::from_cbor(data: &[u8]) -> Result<Self>`
+- [x] Add serde derives to HybridConfig
+- [x] Tests pass: `cargo test hybrid::persistence::tests` (3/3 passed)
+
+#### 3.2: Implement Serializable Structs ✅ COMPLETE
+- [x] Create `SerializableTimestamps` struct
+  - [x] `timestamps: HashMap<VectorId, DateTime<Utc>>`
+  - [x] `to_cbor()` method
+  - [x] `from_cbor()` method
+- [x] Tests pass (included in Phase 3.1 tests)
+
+#### 3.3: Create HybridPersister
+- [ ] Create `HybridPersister<S: S5Storage>` struct
+- [ ] Implement `new(storage: S)` constructor
+- [ ] Implement `save_index(&self, index: &HybridIndex, path: &str)`
+  - [ ] Save metadata to `{path}/metadata.cbor`
+  - [ ] Save timestamps to `{path}/timestamps.cbor`
+  - [ ] Use HNSWPersister to save recent index to `{path}/recent/`
+  - [ ] Use IVFPersister to save historical index to `{path}/historical/`
+- [ ] Implement `load_index(&self, path: &str) -> Result<HybridIndex>`
+  - [ ] Load metadata from `{path}/metadata.cbor`
+  - [ ] Load timestamps from `{path}/timestamps.cbor`
+  - [ ] Use HNSWPersister to load recent index from `{path}/recent/`
+  - [ ] Use IVFPersister to load historical index from `{path}/historical/`
+  - [ ] Reconstruct HybridIndex with loaded data
+
+#### 3.4: Update HybridIndex Core
+- [ ] Update `src/hybrid/mod.rs` to export persistence module
+- [ ] Add `to_bytes(&self) -> Result<Vec<u8>>` method to HybridIndex
+- [ ] Add `from_bytes(data: &[u8]) -> Result<Self>` method to HybridIndex
+- [ ] Add `clear(&mut self) -> Result<()>` method for cleanup
+
+#### 3.5: Write Tests for Serialization (TDD)
+- [ ] Create `src/hybrid/persistence_tests.rs`
+- [ ] Test: Metadata serialization round-trip
+- [ ] Test: Timestamps serialization round-trip
+- [ ] Test: HybridIndex save and load with MockS5Storage
+- [ ] Test: HybridIndex serialization preserves vector count
+- [ ] Test: HybridIndex serialization preserves search results
+- [ ] Test: Version compatibility check
+- [ ] Run tests: `cargo test hybrid::persistence`
+- [ ] All persistence tests must pass ✅
+
+---
+
+### Phase 4: Update Node Bindings with Real S5 Integration 🔧 PENDING
+
+**Goal:** Replace stubs with real S5 persistence using HybridIndex serialization
+
+#### 4.1: Update Type Definitions
+- [ ] Change `metadata: String` to `metadata: serde_json::Value` in types.rs
+- [ ] Update VectorInput struct
+- [ ] Update SearchResult struct
+- [ ] Rebuild to verify TypeScript definitions updated
+
+#### 4.2: Integrate EnhancedS5Storage
+- [ ] Update SessionState in session.rs:
+  - [ ] Remove standalone metadata HashMap
+  - [ ] Add `storage: Arc<EnhancedS5Storage>`
+- [ ] Update `create()` factory:
+  - [ ] Initialize EnhancedS5Storage with config
+  - [ ] Add error handling for S5 connection
+- [ ] Update `addVectors()`:
+  - [ ] Remove JSON.stringify requirement
+  - [ ] Pass metadata directly as serde_json::Value
+- [ ] Update `search()`:
+  - [ ] Return metadata as serde_json::Value
+  - [ ] Remove JSON.parse requirement
+
+#### 4.3: Implement Real loadUserVectors()
+- [ ] Remove "not implemented" error
+- [ ] Add `persister: HybridPersister<EnhancedS5Storage>`
+- [ ] Call `persister.load_index(cid)` to load from S5
+- [ ] Replace current index with loaded index
+- [ ] Handle lazy loading option
+- [ ] Add comprehensive error handling
+
+#### 4.4: Implement Real saveToS5()
+- [ ] Remove "not implemented" error
+- [ ] Call `persister.save_index(&index, session_id)`
+- [ ] Get CID from S5 storage
+- [ ] Return CID string
+- [ ] Add comprehensive error handling
+
+---
+
+### Phase 5: Comprehensive Testing (TDD) 🧪 PENDING
+
+**Goal:** Ensure all features work correctly with 100% test coverage
+
+#### 5.1: Write Unit Tests FIRST (Before Running)
+- [ ] Create `bindings/node/test/session.test.js`
+- [ ] Test: Session create with valid config
+- [ ] Test: Session create with invalid config (missing fields)
+- [ ] Test: addVectors with metadata objects (not strings)
+- [ ] Test: search returns metadata objects (not strings)
+- [ ] Test: getStats returns accurate counts
+- [ ] Test: destroy() clears memory
+- [ ] Test: Operations after destroy() throw errors
+
+#### 5.2: Write Integration Tests with MockS5Storage
+- [ ] Create `bindings/node/test/s5-integration.test.js`
+- [ ] Test: saveToS5() returns valid CID
+- [ ] Test: loadUserVectors() loads from CID
+- [ ] Test: Round-trip save and load preserves vectors
+- [ ] Test: Round-trip save and load preserves metadata
+- [ ] Test: Round-trip save and load preserves search results
+- [ ] Test: Multiple sessions can load same CID
+
+#### 5.3: Write Memory Leak Tests
+- [ ] Test: destroy() actually frees memory
+- [ ] Test: Multiple create/destroy cycles don't leak
+- [ ] Test: Large dataset (10K vectors) cleanup
+
+#### 5.4: Run All Tests
+- [ ] Run unit tests: `cd bindings/node && npm test`
+- [ ] All unit tests must pass ✅
+- [ ] Run integration tests (with TEST_WITH_S5=true if S5 available)
+- [ ] All integration tests must pass ✅
+- [ ] Run memory tests
+- [ ] All memory tests must pass ✅
+- [ ] Fix any failures and re-run until 100% pass
+
+**BLOCKER:** Cannot proceed to Phase 6 until all tests pass
+
+---
+
+### Phase 6: Production Build & Distribution 📦 PENDING
+
+**Goal:** Create production-ready tarball for SDK developer
+
+#### 6.1: Production Build
+- [ ] Run `cargo build --release` in workspace root
+- [ ] Run `npm run build` in bindings/node
+- [ ] Verify binary size is reasonable
+- [ ] Verify TypeScript definitions are current
+- [ ] Run final test suite to confirm release build works
+
+#### 6.2: Create Distribution Package
+- [ ] Run `npm pack` to create tarball
+- [ ] Verify tarball contents (index.js, index.d.ts, *.node, package.json, README.md)
+- [ ] Test install from tarball in clean directory
+- [ ] Verify installed package works
+
+#### 6.3: Update Documentation
+- [ ] Update bindings/node/README.md:
+  - [ ] Remove "Phase 2 limitations" warnings
+  - [ ] Update "What Works" section
+  - [ ] Add S5 persistence examples
+  - [ ] Mark loadUserVectors() and saveToS5() as working
+- [ ] Update docs/sdk-reference/VECTOR_DB_INTEGRATION.md:
+  - [ ] Remove implementation status banner
+  - [ ] Update metadata examples (objects, not strings)
+  - [ ] Remove JSON.stringify/parse from examples
+  - [ ] Mark all functions as implemented
+  - [ ] Add S5 persistence workflow examples
+- [ ] Update CLAUDE.md Phase status
+
+#### 6.4: Prepare for SDK Developer
+- [ ] Write developer message with:
+  - [ ] What's included in v0.1.0
+  - [ ] Installation instructions
+  - [ ] Breaking changes from Phase 2 (metadata is now objects)
+  - [ ] Migration guide if they used Phase 2 version
+- [ ] Include tarball path
+- [ ] Include VECTOR_DB_INTEGRATION.md path
+- [ ] Include quick start example
+
+**DELIVERY:** Only deliver to SDK developer after Phase 6 complete
 
 ---
 

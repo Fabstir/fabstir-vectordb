@@ -29,13 +29,35 @@ pub enum HybridError {
     DuplicateVector(VectorId),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HybridConfig {
+    #[serde(with = "duration_serde")]
     pub recent_threshold: Duration,
     pub hnsw_config: HNSWConfig,
     pub ivf_config: IVFConfig,
     pub migration_batch_size: usize,
     pub auto_migrate: bool,
+}
+
+// Helper module for std::time::Duration serialization
+mod duration_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(duration.as_secs())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let seconds = u64::deserialize(deserializer)?;
+        Ok(Duration::from_secs(seconds))
+    }
 }
 
 impl Default for HybridConfig {
