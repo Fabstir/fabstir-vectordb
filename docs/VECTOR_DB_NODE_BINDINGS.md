@@ -1013,9 +1013,11 @@ MIT
 
 ---
 
-### Phase 3: HybridIndex Serialization 🔨 IN PROGRESS
+### Phase 3: HybridIndex Serialization ✅ COMPLETE
 
 **Goal:** Enable HybridIndex to serialize/deserialize for S5 persistence
+
+**Status:** All sub-phases complete with 8/8 tests passing
 
 #### 3.1: Create Persistence Module ✅ COMPLETE
 - [x] Create `src/hybrid/persistence.rs`
@@ -1040,37 +1042,58 @@ MIT
   - [x] `from_cbor()` method
 - [x] Tests pass (included in Phase 3.1 tests)
 
-#### 3.3: Create HybridPersister
-- [ ] Create `HybridPersister<S: S5Storage>` struct
-- [ ] Implement `new(storage: S)` constructor
-- [ ] Implement `save_index(&self, index: &HybridIndex, path: &str)`
-  - [ ] Save metadata to `{path}/metadata.cbor`
-  - [ ] Save timestamps to `{path}/timestamps.cbor`
-  - [ ] Use HNSWPersister to save recent index to `{path}/recent/`
-  - [ ] Use IVFPersister to save historical index to `{path}/historical/`
-- [ ] Implement `load_index(&self, path: &str) -> Result<HybridIndex>`
-  - [ ] Load metadata from `{path}/metadata.cbor`
-  - [ ] Load timestamps from `{path}/timestamps.cbor`
-  - [ ] Use HNSWPersister to load recent index from `{path}/recent/`
-  - [ ] Use IVFPersister to load historical index from `{path}/historical/`
-  - [ ] Reconstruct HybridIndex with loaded data
+#### 3.3: Create HybridPersister ✅ COMPLETE
+- [x] Create `HybridPersister<S: S5Storage + Clone>` struct
+- [x] Implement `new(storage: S)` constructor
+- [x] Implement `save_index(&self, index: &HybridIndex, path: &str)`
+  - [x] Save metadata to `{path}/metadata.cbor`
+  - [x] Save timestamps to `{path}/timestamps.cbor`
+  - [x] Use HNSWPersister to save recent index to `{path}/recent/`
+  - [x] Use IVFPersister to save historical index to `{path}/historical/`
+- [x] Implement `load_index(&self, path: &str) -> Result<HybridIndex>`
+  - [x] Load metadata from `{path}/metadata.cbor`
+  - [x] Load timestamps from `{path}/timestamps.cbor`
+  - [x] Use HNSWPersister to load recent index from `{path}/recent/`
+  - [x] Use IVFPersister to load historical index from `{path}/historical/`
+  - [x] Reconstruct HybridIndex with loaded data
+- [x] Build successful with no errors
 
-#### 3.4: Update HybridIndex Core
-- [ ] Update `src/hybrid/mod.rs` to export persistence module
-- [ ] Add `to_bytes(&self) -> Result<Vec<u8>>` method to HybridIndex
-- [ ] Add `from_bytes(data: &[u8]) -> Result<Self>` method to HybridIndex
-- [ ] Add `clear(&mut self) -> Result<()>` method for cleanup
+#### 3.4: Update HybridIndex Core ✅ COMPLETE
+- [x] Update `src/hybrid/mod.rs` to export persistence module
+- [x] Add `get_timestamps()` accessor method to HybridIndex
+- [x] Add `get_recent_index()` accessor method to HybridIndex
+- [x] Add `get_historical_index()` accessor method to HybridIndex
+- [x] Add `from_parts()` constructor to HybridIndex for deserialization
+- [x] Add HashMap import to hybrid/core.rs
+- [x] Build successful with no errors
 
-#### 3.5: Write Tests for Serialization (TDD)
-- [ ] Create `src/hybrid/persistence_tests.rs`
-- [ ] Test: Metadata serialization round-trip
-- [ ] Test: Timestamps serialization round-trip
-- [ ] Test: HybridIndex save and load with MockS5Storage
-- [ ] Test: HybridIndex serialization preserves vector count
-- [ ] Test: HybridIndex serialization preserves search results
-- [ ] Test: Version compatibility check
-- [ ] Run tests: `cargo test hybrid::persistence`
-- [ ] All persistence tests must pass ✅
+#### 3.5: Write Tests for Serialization (TDD) ✅ COMPLETE
+- [x] Tests added to existing module in `src/hybrid/persistence.rs`
+- [x] Test: Metadata serialization round-trip ✅
+- [x] Test: Timestamps serialization round-trip ✅
+- [x] Test: HybridIndex save and load with MockS5Storage ✅
+- [x] Test: HybridIndex serialization preserves vector count (20 vectors) ✅
+- [x] Test: HybridIndex serialization preserves search quality (distances) ✅
+- [x] Test: Empty index save/load ✅
+- [x] Test: Missing metadata error handling ✅
+- [x] Test: Version compatibility check ✅
+- [x] Run tests: `cargo test hybrid::persistence --lib`
+- [x] **All 8 persistence tests passing** ✅
+
+**Test Results:**
+```
+running 8 tests
+test hybrid::persistence::tests::test_hybrid_metadata_cbor_roundtrip ... ok
+test hybrid::persistence::tests::test_hybrid_persister_missing_metadata ... ok
+test hybrid::persistence::tests::test_hybrid_persister_empty_index ... ok
+test hybrid::persistence::tests::test_version_compatibility ... ok
+test hybrid::persistence::tests::test_serializable_timestamps_cbor_roundtrip ... ok
+test hybrid::persistence::tests::test_hybrid_persister_save_and_load ... ok
+test hybrid::persistence::tests::test_hybrid_persister_preserves_search_results ... ok
+test hybrid::persistence::tests::test_hybrid_persister_preserves_vector_count ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured
+```
 
 ---
 

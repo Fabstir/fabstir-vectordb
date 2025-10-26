@@ -7,4 +7,4 @@ pub use core::{
     AgeDistribution, HybridConfig, HybridError, HybridIndex, HybridSearchConfig, HybridStats,
     MigrationResult, SearchConfig, TimestampedVector,
 };
-pub use persistence::{HybridMetadata, PersistenceError, SerializableTimestamps};
+pub use persistence::{HybridMetadata, HybridPersister, PersistenceError, SerializableTimestamps};

@@ -3,6 +3,7 @@ use crate::core::types::{SearchResult, VectorId};
 use crate::hnsw::core::{HNSWConfig, HNSWIndex};
 use crate::ivf::core::{ClusterId, IVFConfig, IVFIndex};
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
@@ -625,5 +626,40 @@ impl HybridIndex {
 
     pub fn historical_count(&self) -> usize {
         self.historical_count.try_read().map(|c| *c).unwrap_or(0)
+    }
+
+    /// Get timestamps (for persistence)
+    pub async fn get_timestamps(&self) -> HashMap<VectorId, DateTime<Utc>> {
+        self.timestamps.read().await.clone()
+    }
+
+    /// Get read guard to recent index (for persistence)
+    pub async fn get_recent_index(&self) -> tokio::sync::RwLockReadGuard<'_, HNSWIndex> {
+        self.recent_index.read().await
+    }
+
+    /// Get read guard to historical index (for persistence)
+    pub async fn get_historical_index(&self) -> tokio::sync::RwLockReadGuard<'_, IVFIndex> {
+        self.historical_index.read().await
+    }
+
+    /// Reconstruct HybridIndex from parts (for deserialization)
+    pub fn from_parts(
+        config: HybridConfig,
+        recent_index: HNSWIndex,
+        historical_index: IVFIndex,
+        timestamps: HashMap<VectorId, DateTime<Utc>>,
+        recent_count: usize,
+        historical_count: usize,
+    ) -> Result<Self, HybridError> {
+        Ok(Self {
+            config,
+            recent_index: Arc::new(RwLock::new(recent_index)),
+            historical_index: Arc::new(RwLock::new(historical_index)),
+            timestamps: Arc::new(RwLock::new(timestamps)),
+            initialized: true,
+            recent_count: Arc::new(RwLock::new(recent_count)),
+            historical_count: Arc::new(RwLock::new(historical_count)),
+        })
     }
 }
