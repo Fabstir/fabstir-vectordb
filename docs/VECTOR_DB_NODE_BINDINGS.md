@@ -1101,11 +1101,13 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured
 
 **Goal:** Replace stubs with real S5 persistence using HybridIndex serialization
 
-#### 4.1: Update Type Definitions
-- [ ] Change `metadata: String` to `metadata: serde_json::Value` in types.rs
-- [ ] Update VectorInput struct
-- [ ] Update SearchResult struct
-- [ ] Rebuild to verify TypeScript definitions updated
+#### 4.1: Update Type Definitions ✅ COMPLETE
+- [x] Change `metadata: String` to `metadata: serde_json::Value` in types.rs
+- [x] Update VectorInput struct
+- [x] Update SearchResult struct
+- [x] Rebuild to verify TypeScript definitions updated
+
+**Completed:** Metadata fields now use `serde_json::Value` instead of JSON strings. TypeScript definitions show `metadata: any` allowing native JavaScript objects. Added `serde-json` feature to napi dependency.
 
 #### 4.2: Integrate EnhancedS5Storage
 - [ ] Update SessionState in session.rs:
