@@ -5,8 +5,11 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use vector_db::{
-    core::types::VectorId,
-    hybrid::{HybridIndex, HybridConfig},
+    core::{
+        types::VectorId,
+        storage::S5Storage,
+    },
+    hybrid::{HybridIndex, HybridConfig, HybridPersister},
     storage::{EnhancedS5Storage, S5StorageConfig, StorageMode},
 };
 
@@ -79,14 +82,68 @@ impl VectorDBSession {
     #[napi]
     pub async unsafe fn load_user_vectors(
         &mut self,
-        _cid: String,
+        cid: String,
         _options: Option<LoadOptions>,
     ) -> Result<()> {
-        // TODO: Phase 3 - Implement S5 loading when serialization is available
-        // This requires HybridIndex::load_from_bytes() method which doesn't exist yet
-        Err(VectorDBError::session_error(
-            "load_user_vectors not yet implemented - requires index serialization support"
-        ).into())
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Note: lazy_load option is accepted but not yet implemented in HybridPersister
+        // Currently all indices are loaded eagerly
+
+        // Create persister with S5 storage backend
+        let persister = HybridPersister::new(state.storage.as_ref().clone());
+
+        // Load index from S5 (cid is used as the path prefix)
+        // This loads metadata, timestamps, HNSW index, and IVF index
+        let loaded_index = persister.load_index(&cid).await
+            .map_err(|e| {
+                use vector_db::hybrid::PersistenceError;
+                match e {
+                    PersistenceError::Storage(msg) =>
+                        VectorDBError::storage_error(format!("Failed to load from S5: {}", msg)),
+                    PersistenceError::MissingComponent(comp) =>
+                        VectorDBError::storage_error(format!("Missing index component: {}", comp)),
+                    PersistenceError::IncompatibleVersion { expected, found } =>
+                        VectorDBError::index_error(format!("Incompatible index version: expected {}, found {}", expected, found)),
+                    _ => VectorDBError::index_error(format!("Failed to load index: {}", e)),
+                }
+            })?;
+
+        // Replace current index with loaded one
+        {
+            let mut index_guard = state.index.write().await;
+            *index_guard = loaded_index;
+        }
+
+        // Load metadata HashMap from S5
+        let metadata_path = format!("{}/metadata_map.cbor", cid);
+        match state.storage.as_ref().get(&metadata_path).await {
+            Ok(Some(data)) => {
+                // Deserialize metadata HashMap
+                let metadata_map: HashMap<String, serde_json::Value> =
+                    serde_cbor::from_slice(&data)
+                        .map_err(|e| VectorDBError::storage_error(
+                            format!("Failed to deserialize metadata: {}", e)
+                        ))?;
+
+                // Replace current metadata with loaded one
+                let mut metadata_guard = state.metadata.write().await;
+                *metadata_guard = metadata_map;
+            }
+            Ok(None) => {
+                // No metadata found (old index format or empty)
+                // Clear metadata to be safe
+                state.metadata.write().await.clear();
+            }
+            Err(e) => {
+                // Non-fatal: metadata is optional, log and continue
+                eprintln!("Warning: Failed to load metadata: {:?}", e);
+                state.metadata.write().await.clear();
+            }
+        }
+
+        Ok(())
     }
 
     /// Search for similar vectors
@@ -218,11 +275,47 @@ impl VectorDBSession {
     /// Save index to S5
     #[napi]
     pub async fn save_to_s5(&self) -> Result<String> {
-        // TODO: Phase 3 - Implement S5 save when serialization is available
-        // This requires HybridIndex::to_bytes() method which doesn't exist yet
-        Err(VectorDBError::session_error(
-            "save_to_s5 not yet implemented - requires index serialization support"
-        ).into())
+        let state = self.state.as_ref()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Use session_id as the path prefix for S5 storage
+        let path = &state.session_id;
+
+        // Create persister with S5 storage backend
+        let persister = HybridPersister::new(state.storage.as_ref().clone());
+
+        // Save index to S5 (saves metadata, timestamps, HNSW index, and IVF index)
+        let index_guard = state.index.read().await;
+        persister.save_index(&*index_guard, path).await
+            .map_err(|e| {
+                use vector_db::hybrid::PersistenceError;
+                match e {
+                    PersistenceError::Storage(msg) =>
+                        VectorDBError::storage_error(format!("Failed to save to S5: {}", msg)),
+                    PersistenceError::Serialization(msg) =>
+                        VectorDBError::storage_error(format!("Failed to serialize index: {}", msg)),
+                    _ => VectorDBError::storage_error(format!("Failed to save index: {}", e)),
+                }
+            })?;
+        drop(index_guard);
+
+        // Save metadata HashMap to S5
+        let metadata_guard = state.metadata.read().await;
+        let metadata_cbor = serde_cbor::to_vec(&*metadata_guard)
+            .map_err(|e| VectorDBError::storage_error(
+                format!("Failed to serialize metadata: {}", e)
+            ))?;
+
+        let metadata_path = format!("{}/metadata_map.cbor", path);
+        state.storage.as_ref().put(&metadata_path, metadata_cbor).await
+            .map_err(|e| VectorDBError::storage_error(
+                format!("Failed to save metadata to S5: {}", e)
+            ))?;
+        drop(metadata_guard);
+
+        // Return the session_id as the CID (path identifier)
+        // In a real S5 implementation, this would be a content-addressed identifier
+        Ok(state.session_id.clone())
     }
 
     /// Get session statistics
