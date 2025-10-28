@@ -205,7 +205,7 @@ Creates a new vector DB session for a user.
 
 ```typescript
 interface VectorDBConfig {
-  s5Portal: string; // S5 portal URL (e.g., 'http://localhost:5524')
+  s5Portal: string; // S5 portal URL (e.g., 'http://localhost:5522')
   userSeedPhrase: string; // User's blockchain-derived seed phrase
   sessionId: string; // Unique session identifier
   memoryBudgetMB?: number; // Optional: Memory limit (default: 512 MB)
@@ -217,11 +217,10 @@ interface VectorDBConfig {
 **Example:**
 
 ```typescript
-const session = await VectorDBSession.create({
-  s5Portal: process.env.S5_PORTAL_URL || "http://localhost:5524",
+const session = await VectorDbSession.create({
+  s5Portal: process.env.S5_PORTAL_URL || "http://localhost:5522",
   userSeedPhrase: userSeed,
   sessionId: sessionId.toString(),
-  memoryBudgetMB: 512,
 });
 ```
 
@@ -460,7 +459,7 @@ Create a new module to manage vector DB sessions:
 
 ```typescript
 // src/rag/VectorRAGManager.ts
-import { VectorDBSession } from "@fabstir/vector-db-native";
+import { VectorDbSession } from "@fabstir/vector-db-native";
 import type { S5Config } from "../storage/StorageManager";
 
 export interface RAGConfig {
@@ -470,7 +469,7 @@ export interface RAGConfig {
 }
 
 export class VectorRAGManager {
-  private session?: VectorDBSession;
+  private session?: VectorDbSession;
   private config: RAGConfig;
 
   constructor(config: RAGConfig) {
@@ -479,7 +478,7 @@ export class VectorRAGManager {
 
   /**
    * Initialize RAG session for a user
-   * NOTE: loadUserVectors() not implemented in Phase 2 - session starts empty
+   * ✅ Production ready - loads existing vectors from S5 if CID provided
    */
   async initializeSession(
     sessionId: string,
@@ -487,18 +486,19 @@ export class VectorRAGManager {
     userVectorCID?: string
   ): Promise<void> {
     // Create session
-    this.session = await VectorDBSession.create({
-      s5Portal: this.config.s5Config.portalUrl || "http://localhost:5524",
+    this.session = await VectorDbSession.create({
+      s5Portal: this.config.s5Config.portalUrl || "http://localhost:5522",
       userSeedPhrase,
       sessionId,
-      memoryBudgetMB: this.config.memoryBudgetMB || 512,
     });
 
-    // NOTE: loadUserVectors() not implemented in Phase 2
-    // Session starts empty - vectors must be added via addVectors()
-    // Phase 3 will enable loading from S5
+    // Load existing vectors from S5 if user has them
     if (userVectorCID) {
-      console.log(`RAG initialized: CID ${userVectorCID} noted but not loaded (Phase 3 feature)`);
+      await this.session.loadUserVectors(userVectorCID, {
+        lazyLoad: this.config.lazyLoad ?? true
+      });
+      const stats = this.session.getStats();
+      console.log(`RAG initialized: Loaded ${stats.vectorCount} vectors from S5`);
     } else {
       console.log("RAG initialized: Starting with empty index");
     }
@@ -506,6 +506,7 @@ export class VectorRAGManager {
 
   /**
    * Retrieve relevant context for a query
+   * ✅ Metadata returned as native JavaScript objects
    */
   async retrieveContext(
     queryEmbedding: number[],
@@ -521,19 +522,17 @@ export class VectorRAGManager {
       includeVectors: false,
     });
 
-    return results.map((r) => {
-      // Parse JSON metadata
-      const metadata = JSON.parse(r.metadata);
-      return {
-        text: metadata.text || "",
-        score: r.score,
-        metadata,
-      };
-    });
+    // Metadata is already a native object - no JSON.parse needed!
+    return results.map((r) => ({
+      text: r.metadata.text || "",
+      score: r.score,
+      metadata: r.metadata,
+    }));
   }
 
   /**
    * Add new vectors to the index (for compaction)
+   * ✅ Pass metadata as native objects - no JSON.stringify needed!
    */
   async addVectors(
     vectors: Array<{
@@ -546,27 +545,23 @@ export class VectorRAGManager {
       throw new Error("RAG session not initialized");
     }
 
-    // Convert metadata objects to JSON strings
-    const vectorsWithJsonMetadata = vectors.map(v => ({
-      ...v,
-      metadata: JSON.stringify(v.metadata)
-    }));
-
-    await this.session.addVectors(vectorsWithJsonMetadata);
+    // Pass metadata directly as objects
+    await this.session.addVectors(vectors);
   }
 
   /**
    * Save updated index to S5
-   * NOTE: saveToS5() not implemented in Phase 2
+   * ✅ Production ready - persists to decentralized storage
    */
   async saveIndex(): Promise<string> {
     if (!this.session) {
       throw new Error("RAG session not initialized");
     }
 
-    // NOTE: This will throw "not implemented" error in Phase 2
-    // Phase 3 will enable saving to S5
-    return await this.session.saveToS5();
+    // Save to S5 and return CID
+    const cid = await this.session.saveToS5();
+    console.log(`Index saved to S5 with CID: ${cid}`);
+    return cid;
   }
 
   /**
@@ -616,27 +611,26 @@ export class SessionManager {
       config
     );
 
-    // Initialize RAG if enabled (Phase 2: in-memory only)
+    // Initialize RAG if enabled (✅ Production ready with S5 persistence)
     if (config.enableRAG !== false) {
       // Default to true
       try {
         // Initialize RAG manager
         this.ragManager = new VectorRAGManager({
           s5Config: this.sdk.config.s5Config || {},
-          memoryBudgetMB: config.ragMemoryBudgetMB || 512,
           lazyLoad: config.ragLazyLoad ?? true,
         });
 
-        // Phase 2: Initialize empty session (no S5 loading)
-        // Vectors can be added during the session using addDocuments()
-        // but will not persist after session ends
+        // Load user's existing vectors from S5 if available
+        // Pass userVectorCID if user has previous RAG data
         await this.ragManager.initializeSession(
           sessionId.toString(),
-          this.sdk.userSeedPhrase // User's blockchain-derived seed
-          // userVectorCID omitted - Phase 3 will add S5 loading
+          this.sdk.userSeedPhrase, // User's blockchain-derived seed
+          config.userVectorCID // CID of user's saved vectors (optional)
         );
 
-        console.log("RAG enabled for session (in-memory)", sessionId.toString());
+        const stats = this.ragManager.getStats();
+        console.log(`RAG enabled for session: ${stats?.vectorCount || 0} vectors loaded`, sessionId.toString());
       } catch (error) {
         console.warn(
           "RAG initialization failed, continuing without RAG:",
@@ -815,7 +809,7 @@ export class SessionManager {
 
 ## RAG Flow Examples
 
-### Example 1: Basic RAG Session (Phase 2 - In-Memory)
+### Example 1: Basic RAG Session with S5 Persistence ✅
 
 ```typescript
 import { FabstirSDKCore } from "@fabstir/sdk-core";
@@ -833,6 +827,7 @@ await sdk.authenticate("signer", { signer: userSigner });
 const sessionManager = sdk.getSessionManager();
 
 // Start session with RAG enabled
+// Automatically loads user's vectors from S5 if userVectorCID provided
 const { sessionId } = await sessionManager.startSession(
   modelHash,
   hostAddress,
@@ -842,21 +837,18 @@ const { sessionId } = await sessionManager.startSession(
     duration: 3600,
     proofInterval: 100,
     enableRAG: true,
-    ragMemoryBudgetMB: 512,
+    userVectorCID: "u123abc...", // User's saved vectors (optional)
+    ragLazyLoad: true,
   }
 );
 
-// NOTE: Phase 2 limitation - no pre-existing vectors loaded
-// Session starts with empty index
-// You must add vectors during the session (see Example 2)
-
-// Send prompts - RAG will search if vectors were added this session
+// ✅ User's vectors loaded from S5 automatically
+// Send prompts - RAG searches across all user's vectors
 const response1 = await sessionManager.sendPrompt(
   sessionId,
   "What did I say about climate change?"
 );
-// → In Phase 2: searches only vectors added during THIS session
-// → In Phase 3: will search vectors loaded from S5
+// → Searches ALL user's vectors (loaded from S5)
 
 console.log(response1);
 
@@ -871,12 +863,12 @@ const response2 = await sessionManager.sendPrompt(
 await sessionManager.endSession(sessionId);
 // → Vector DB session destroyed
 // → Host memory cleared
-// → Vectors are NOT persisted (Phase 3 feature)
+// → User's vectors remain safely stored in S5
 ```
 
 ---
 
-### Example 2: Document Ingestion with Compaction (Phase 2)
+### Example 2: Document Ingestion with S5 Persistence ✅
 
 ```typescript
 import { VectorRAGManager } from "fabstir-llm-sdk/rag";
@@ -901,19 +893,19 @@ const ragManager = new VectorRAGManager({
   s5Config: sdk.config.s5Config,
 });
 
-// Initialize session (starts empty in Phase 2)
+// Initialize session - load existing vectors if user has them
 await ragManager.initializeSession(
   sessionId.toString(),
   userSeedPhrase,
-  undefined // No CID - Phase 2 doesn't support loading
+  existingVectorCID // Load user's existing vectors (undefined if new user)
 );
 
-// Add new vectors (VectorRAGManager handles JSON.stringify)
+// Add new vectors - metadata passed as native objects
 await ragManager.addVectors(
   chunks.map((chunk, i) => ({
     id: `doc_${documentId}_chunk_${i}`,
     vector: embeddings[i],
-    metadata: {  // Pass as object, VectorRAGManager converts to JSON string
+    metadata: {  // Native JavaScript object - no JSON.stringify needed!
       text: chunk,
       documentId,
       chunkIndex: i,
@@ -922,15 +914,17 @@ await ragManager.addVectors(
   }))
 );
 
-// NOTE: saveIndex() not implemented in Phase 2
-// Vectors exist only during this session
-// Phase 3 will enable saving to S5
+// ✅ Save updated index to S5 decentralized storage
+const newCID = await ragManager.saveIndex();
+console.log(`Vectors persisted to S5 with CID: ${newCID}`);
 
-console.log("Vectors added to in-memory index for this session");
+// Store newCID in user's profile for next session
+await sdk.updateUserProfile({ vectorCID: newCID });
+
 const stats = ragManager.getStats();
-console.log(`${stats.vectorCount} vectors loaded, ${stats.memoryUsageMB} MB`);
+console.log(`${stats.vectorCount} vectors, ${stats.memoryUsageMB} MB`);
 
-// Cleanup (vectors will be cleared from memory)
+// Cleanup (vectors remain in S5)
 await ragManager.cleanup();
 ```
 
@@ -1008,7 +1002,7 @@ describe("VectorRAGManager", () => {
 
   beforeEach(() => {
     ragManager = new VectorRAGManager({
-      s5Config: { portalUrl: "http://localhost:5524" },
+      s5Config: { portalUrl: "http://localhost:5522" },
     });
   });
 
@@ -1035,7 +1029,7 @@ describe("VectorRAGManager", () => {
       undefined
     );
 
-    // Add test vectors (metadata is objects, VectorRAGManager handles JSON.stringify)
+    // Add test vectors with native object metadata
     await ragManager.addVectors([
       {
         id: "vec1",
@@ -1056,7 +1050,7 @@ describe("VectorRAGManager", () => {
     expect(results.length).toBeGreaterThan(0);
     expect(results[0]).toHaveProperty("text");
     expect(results[0]).toHaveProperty("score");
-    expect(results[0].text).toBe("Test document 1"); // VectorRAGManager parses JSON
+    expect(results[0].text).toBe("Test document 1"); // Metadata is native object
   });
 
   it("should cleanup properly", async () => {
@@ -1167,12 +1161,12 @@ describe("Memory Leak Detection", () => {
         undefined
       );
 
-      // VectorRAGManager handles JSON.stringify internally
+      // Metadata passed as native JavaScript objects
       await ragManager.addVectors([
         {
           id: `vec-${i}`,
           vector: new Array(384).fill(Math.random()),
-          metadata: { text: `Document ${i}` }, // Pass as object
+          metadata: { text: `Document ${i}` }, // Native object - no JSON.stringify
         },
       ]);
 
@@ -1328,12 +1322,12 @@ VectorDBError: Failed to connect to S5 portal
 
 ```typescript
 // Check S5 portal is running
-const response = await fetch("http://localhost:5524/s5/health");
+const response = await fetch("http://localhost:5522/health");
 console.log(await response.text());
 
 // Use correct portal URL
-const session = await VectorDBSession.create({
-  s5Portal: "http://localhost:5524", // Ensure correct port
+const session = await VectorDbSession.create({
+  s5Portal: "http://localhost:5522", // Ensure correct port
   // ...
 });
 ```
@@ -1447,7 +1441,7 @@ import type {
 
 | Variable               | Description              | Default                       |
 | ---------------------- | ------------------------ | ----------------------------- |
-| `S5_PORTAL_URL`        | S5 portal endpoint       | `http://localhost:5524`       |
+| `S5_PORTAL_URL`        | S5 portal endpoint       | `http://localhost:5522`       |
 | `EMBEDDING_ENDPOINT`   | Embedding model endpoint | `http://localhost:8081/embed` |
 | `VECTOR_DB_DEBUG`      | Enable debug logging     | `false`                       |
 | `RAG_MEMORY_BUDGET_MB` | Default memory budget    | `512`                         |
