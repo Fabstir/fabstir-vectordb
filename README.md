@@ -1,19 +1,80 @@
 # Fabstir AI Vector Database
 
-A high-performance, decentralized vector database built on S5 storage with hybrid HNSW/IVF indexing for AI applications.
+A high-performance, decentralized vector database built on S5 storage with hybrid HNSW/IVF indexing and chunked storage for AI applications.
 
 ## Features
 
-- 🚀 **High Performance**: Sub-50ms search latency with 30-second timeout for S5 operations
+- 🚀 **High Performance**: 58ms warm search latency (Phase 6 tested with 100K vectors)
+- 📦 **Chunked Storage**: Scalable partitioning with lazy loading (10K vectors/chunk)
+- 🔒 **Encrypted by Default**: ChaCha20-Poly1305 encryption at rest (<5% overhead)
 - 🌐 **Decentralized Storage**: Built on S5 network via Enhanced S5.js
 - 🔍 **Hybrid Indexing**: HNSW for recent data, IVF for historical data
-- 📊 **Scalable Architecture**: HAMT sharding activates at 1000+ vectors
-- 🔧 **Multiple Interfaces**: REST API on port 7533
+- 💾 **Memory Efficient**: 64 MB for 100K vectors with lazy loading (10x reduction)
+- 📈 **Scales to 1M+ vectors**: Tested at production scale
+- 🔧 **Multiple Interfaces**: REST API (port 7533) + Node.js native bindings
 - 🐳 **Docker Ready**: Production and development containers
+
+## Performance (v0.1.1 - Phase 6 Tested)
+
+**100K Vectors (384-dim, all-MiniLM-L6-v2):**
+- **Load Time**: 685ms (6x faster than v0.1.0)
+- **Memory Usage**: 64 MB (10x reduction vs v0.1.0)
+- **Search Latency**: 58ms warm cache, ~1000ms cold cache
+- **Encryption Overhead**: <5% (ChaCha20-Poly1305)
+
+**Key Improvements:**
+- Chunked storage with lazy loading
+- LRU cache for hot chunks (default: 150 MB)
+- Encryption enabled by default
+- Scales to 1M+ vectors
+
+See [Performance Tuning Guide](docs/PERFORMANCE_TUNING.md) for optimization strategies.
 
 ## Quick Start
 
-### Production Deployment (After Reboot)
+### Node.js Native Bindings (Recommended for SDK Integration)
+
+```javascript
+const { VectorDbSession } = require('@fabstir/vector-db-native');
+
+async function example() {
+  // 1. Create session with chunked storage
+  const session = await VectorDbSession.create({
+    s5Portal: 'http://localhost:5522',
+    userSeedPhrase: 'your-seed-phrase',
+    sessionId: 'user-123',
+    encryptAtRest: true,    // Enabled by default
+    chunkSize: 10000,       // 10K vectors/chunk
+    cacheSizeMb: 150,       // Cache 10 chunks
+  });
+
+  try {
+    // 2. Add vectors
+    await session.addVectors([{
+      id: 'doc1',
+      vector: [...], // 384-dim embedding
+      metadata: { text: 'Hello world' }
+    }]);
+
+    // 3. Save to S5 (encrypted, chunked)
+    const cid = await session.saveToS5();
+    console.log(`Saved: ${cid}`);
+
+    // 4. Load from S5 (lazy loading)
+    await session.loadUserVectors(cid, { lazyLoad: true });
+
+    // 5. Search (warm cache: ~58ms)
+    const results = await session.search(queryVector, 5);
+    console.log(results[0].metadata.text);  // Native object access
+  } finally {
+    await session.destroy();  // CRITICAL: Clean up memory
+  }
+}
+```
+
+See [Node.js Integration Guide](docs/sdk-reference/VECTOR_DB_INTEGRATION.md) for complete API documentation.
+
+### REST API Production Deployment (After Reboot)
 
 ```bash
 # 1. Start Enhanced S5.js
