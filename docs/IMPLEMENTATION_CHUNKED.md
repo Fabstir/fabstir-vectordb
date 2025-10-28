@@ -811,17 +811,56 @@ Update all documentation for the new chunked architecture.
 
 #### 7.1 Update CLAUDE.md (Day 16 - Morning)
 
-- [ ] **Modify**: `/workspace/CLAUDE.md`
-  - [ ] Update architecture section (chunked storage)
-  - [ ] Update size limits: now supports 1M+ vectors
-  - [ ] Document encryption defaults (ON by default)
-  - [ ] Add chunked loading configuration
-  - [ ] Add cache tuning guide
-  - [ ] Update environment variables:
+- [x] **Modify**: `/workspace/CLAUDE.md` (✅ Complete)
+  - [x] Update architecture section (chunked storage)
+  - [x] Update size limits: now supports 1M+ vectors
+  - [x] Document encryption defaults (ON by default)
+  - [x] Add chunked loading configuration
+  - [x] Add cache tuning guide
+  - [x] Update environment variables:
     - `VECTOR_DB_ENCRYPT_AT_REST=true` (default)
     - `VECTOR_DB_CHUNK_SIZE=10000`
     - `VECTOR_DB_CACHE_SIZE_MB=150`
-  - [ ] Update troubleshooting section
+  - [x] Update troubleshooting section
+
+**Actual Updates Applied** (✅ Phase 7.1 Complete):
+
+**1. Architecture Section (Lines 17-36)**:
+- Added "Chunked Storage" subsection with 5 bullet points
+- Updated "Performance Targets" with actual test results:
+  - Support 1M+ vectors (tested with 100K)
+  - < 100ms search latency (actual: 58ms avg)
+  - Memory efficient: 64 MB for 100K vectors
+  - Fast load: 685ms for 100K vectors from S5
+  - Cold cache: ~1000ms (first search)
+
+**2. Environment Variables (Lines 232-236)**:
+- Added new section "Chunked Storage (Production Ready - Phase 6 Complete)"
+- Variables: VECTOR_DB_ENCRYPT_AT_REST, VECTOR_DB_CHUNK_SIZE, VECTOR_DB_CACHE_SIZE_MB, VECTOR_DB_LAZY_LOAD
+- Updated CACHE_SIZE_MB to 150 with formula comment
+
+**3. Current Implementation Status (Lines 301-329)**:
+- Phase 6: Updated to 100% Complete (was 70%)
+- Phase 7: Added as "In Progress - 7.1 Complete"
+- Added 4 new features to Feature Status:
+  - Chunked storage with lazy loading
+  - Encryption-at-rest (default)
+  - Memory profiling (64 MB for 100K)
+  - VectorId preservation in Node.js bindings
+
+**4. New Section: Chunked Storage Configuration (Lines 270-315)**:
+- Cache Tuning Guide with formula and recommendations
+- Chunk Size Guidelines table (dataset size → chunk size → memory)
+- Trade-offs explanation
+- Example Node.js configuration code
+
+**5. Troubleshooting Section (Lines 506-562)**:
+- Updated issue #3: "Out of Memory with Chunked Storage" (was generic)
+- Added issue #4: "Slow Initial Search" (cold vs warm cache)
+- Added issue #5: "Search Returns Wrong IDs" (VectorId fix)
+- Added debug commands for chunked storage memory profiling
+
+**Total Changes**: ~160 lines added/modified across 5 sections + 1 new section
 
 **Notes**:
 
