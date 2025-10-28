@@ -236,7 +236,29 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
             .await
             .map_err(|e| PersistenceError::Storage(e.to_string()))?;
 
-        // Step 7: Save metadata separately (timestamps, etc.)
+        // Step 7: Save timestamps
+        let timestamps = index.get_timestamps().await;
+        let serializable_timestamps = SerializableTimestamps::new(timestamps);
+        let timestamps_path = format!("{}/timestamps.cbor", path);
+        self.storage
+            .put(&timestamps_path, serializable_timestamps.to_cbor()?)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+        // Step 8: Save HNSW nodes with full graph structure
+        let recent_index_guard = index.get_recent_index().await;
+        let hnsw_nodes = recent_index_guard.get_all_nodes();
+        drop(recent_index_guard);
+
+        let hnsw_nodes_cbor = serde_cbor::to_vec(&hnsw_nodes)
+            .map_err(|e| PersistenceError::Serialization(e.to_string()))?;
+        let hnsw_nodes_path = format!("{}/hnsw_nodes.cbor", path);
+        self.storage
+            .put(&hnsw_nodes_path, hnsw_nodes_cbor)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+        // Step 9: Save metadata separately (config, counts, etc.)
         self.save_metadata(index, path).await?;
 
         Ok(manifest)
@@ -536,20 +558,24 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
             }
         }
 
-        // Step 6: Reconstruct HNSW index from manifest + chunks
+        // Step 6: Reconstruct HNSW index from saved nodes with full graph structure
         let mut hnsw_index = crate::hnsw::core::HNSWIndex::new(metadata.config.hnsw_config.clone());
 
-        if let Some(hnsw_manifest) = &manifest.hnsw_structure {
-            // Reconstruct nodes from chunks
-            for (vector_id, vector) in &all_vectors {
-                // Check if this vector belongs to HNSW (use node_chunk_map)
-                let id_str = vector_id.to_string();
-                if hnsw_manifest.node_chunk_map.contains_key(&id_str) {
-                    // Create node and restore it
-                    let node = crate::hnsw::core::HNSWNode::new(vector_id.clone(), vector.clone());
-                    hnsw_index.restore_node(node)
-                        .map_err(|e| PersistenceError::HNSWError(format!("Failed to restore node: {}", e)))?;
-                }
+        // Load HNSW nodes with full graph structure
+        let hnsw_nodes_path = format!("{}/hnsw_nodes.cbor", path);
+        if let Ok(Some(hnsw_nodes_data)) = self.storage.get(&hnsw_nodes_path).await {
+            let hnsw_nodes: Vec<crate::hnsw::core::HNSWNode> = serde_cbor::from_slice(&hnsw_nodes_data)
+                .map_err(|e| PersistenceError::Deserialization(format!("Failed to deserialize HNSW nodes: {}", e)))?;
+
+            // Restore nodes with full graph structure (neighbors, layers, etc.)
+            for node in hnsw_nodes {
+                hnsw_index.restore_node(node)
+                    .map_err(|e| PersistenceError::HNSWError(format!("Failed to restore node: {}", e)))?;
+            }
+
+            // Restore entry point if available
+            if let Some(hnsw_manifest) = &manifest.hnsw_structure {
+                hnsw_index.set_entry_point(hnsw_manifest.entry_point.clone());
             }
         }
 
@@ -618,13 +644,17 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
             ivf_index.set_inverted_lists(inverted_lists);
         }
 
-        // Step 8: Load timestamps
-        // For MVP, we'll use current time for all vectors (proper timestamp loading in Phase 4)
-        let mut timestamps = HashMap::new();
-        let now = Utc::now();
-        for (id, _) in &all_vectors {
-            timestamps.insert(id.clone(), now);
-        }
+        // Step 8: Load timestamps from storage
+        let timestamps_path = format!("{}/timestamps.cbor", path);
+        let timestamps_data = self
+            .storage
+            .get(&timestamps_path)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?
+            .ok_or_else(|| PersistenceError::MissingComponent("timestamps.cbor".to_string()))?;
+
+        let serializable_timestamps = SerializableTimestamps::from_cbor(&timestamps_data)?;
+        let timestamps = serializable_timestamps.timestamps;
 
         // Step 9: Assemble HybridIndex using from_parts
         let hybrid_index = HybridIndex::from_parts(

@@ -91,7 +91,7 @@ impl VectorDBSession {
         Ok(Self { state: Some(state) })
     }
 
-    /// Load user's vectors from S5
+    /// Load user's vectors from S5 using chunked storage format
     #[napi]
     pub async unsafe fn load_user_vectors(
         &mut self,
@@ -102,14 +102,14 @@ impl VectorDBSession {
             .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
 
         // Note: lazy_load option is accepted but not yet implemented in HybridPersister
-        // Currently all indices are loaded eagerly
+        // Progress callback support can be added in future iterations
 
         // Create persister with S5 storage backend
         let persister = HybridPersister::new(state.storage.as_ref().clone());
 
-        // Load index from S5 (cid is used as the path prefix)
-        // This loads metadata, timestamps, HNSW index, and IVF index
-        let loaded_index = persister.load_index(&cid).await
+        // Load index from S5 using chunked format (cid is used as the path prefix)
+        // This loads manifest, then chunks in parallel, reconstructs HNSW + IVF indices
+        let loaded_index = persister.load_index_chunked(&cid).await
             .map_err(|e| {
                 use vector_db::hybrid::PersistenceError;
                 match e {
@@ -287,7 +287,7 @@ impl VectorDBSession {
         Ok(())
     }
 
-    /// Save index to S5
+    /// Save index to S5 using chunked storage format
     #[napi]
     pub async fn save_to_s5(&self) -> Result<String> {
         let state = self.state.as_ref()
@@ -299,9 +299,10 @@ impl VectorDBSession {
         // Create persister with S5 storage backend
         let persister = HybridPersister::new(state.storage.as_ref().clone());
 
-        // Save index to S5 (saves metadata, timestamps, HNSW index, and IVF index)
+        // Save index to S5 using chunked format
+        // This saves vectors in chunks, plus HNSW/IVF structure, and creates a manifest
         let index_guard = state.index.read().await;
-        persister.save_index(&*index_guard, path).await
+        let _manifest = persister.save_index_chunked(&*index_guard, path).await
             .map_err(|e| {
                 use vector_db::hybrid::PersistenceError;
                 match e {

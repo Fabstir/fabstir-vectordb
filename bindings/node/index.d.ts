@@ -78,7 +78,7 @@ export type VectorDBSession = VectorDbSession;
 export declare class VectorDbSession {
   /** Create a new vector DB session */
   static create(config: VectorDBConfig): Promise<VectorDbSession>;
-  /** Load user's vectors from S5 */
+  /** Load user's vectors from S5 using chunked storage format */
   loadUserVectors(
     cid: string,
     options?: LoadOptions | undefined | null,
@@ -91,7 +91,7 @@ export declare class VectorDbSession {
   ): Promise<Array<SearchResult>>;
   /** Add vectors to the index */
   addVectors(vectors: Array<VectorInput>): Promise<void>;
-  /** Save index to S5 */
+  /** Save index to S5 using chunked storage format */
   saveToS5(): Promise<string>;
   /** Get session statistics */
   getStats(): SessionStats;
