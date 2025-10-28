@@ -40,7 +40,10 @@ session-123/
   - ✅ Phase 3.1: Encryption Configuration (100%) - Completed 2025-01-28
   - ✅ Phase 3.2: Chunk Loader (100%) - Completed 2025-01-28
   - ✅ Phase 3.3: Update Storage Module (100%) - Completed 2025-01-28
-- ⏳ Phase 4: HNSW/IVF Lazy Loading (0%)
+- ⏳ Phase 4: HNSW/IVF Lazy Loading (10%)
+  - ⏳ Phase 4.1: HNSW Lazy Loading (50% - Tests Complete, Implementation Pending)
+  - ⏳ Phase 4.2: IVF Lazy Loading (0%)
+  - ⏳ Phase 4.3: HybridIndex Integration (0%)
 - ⏳ Phase 5: Node.js Bindings Updates (0%)
 - ⏳ Phase 6: Integration Testing & Benchmarks (0%)
 - ⏳ Phase 7: Documentation Updates (0%)
@@ -365,18 +368,18 @@ Add encryption support and chunk loader.
 
 Adapt HNSW and IVF indices to support lazy vector loading.
 
-#### 4.1 HNSW Lazy Loading (Day 6-7)
+#### 4.1 HNSW Lazy Loading (Day 6-7) ⏳ In Progress
 
 **TDD Approach**: Write integration tests first
 
-- [ ] **Test File**: `tests/integration/hnsw_lazy_tests.rs` (create new, max 400 lines)
-  - [ ] Test HNSW search with lazy vector loading
-  - [ ] Test HNSW search across multiple chunks
-  - [ ] Test cache hit rate during repeated searches
-  - [ ] Test HNSW insert with lazy-loaded neighbors
-  - [ ] Test performance: cold cache vs. warm cache
-  - [ ] Test error handling: missing chunk
-  - [ ] Test concurrent searches (thread safety)
+- [x] **Test File**: `tests/integration/hnsw_lazy_tests.rs` (created, 377 lines, 7 tests)
+  - [x] Test HNSW search with lazy vector loading
+  - [x] Test HNSW search across multiple chunks
+  - [x] Test cache hit rate during repeated searches
+  - [x] Test HNSW insert with lazy-loaded neighbors
+  - [x] Test performance: cold cache vs. warm cache
+  - [x] Test error handling: missing chunk
+  - [x] Test concurrent searches (thread safety)
 
 - [ ] **Implementation**: `src/hnsw/core.rs` (major refactor, target ~800 lines)
   - [ ] Add `chunk_loader: Option<Arc<ChunkLoader>>` to `HNSWIndex`
@@ -394,7 +397,9 @@ Adapt HNSW and IVF indices to support lazy vector loading.
 
 **Bounded Autonomy**: Target ~800 lines. If exceeding, split lazy loading into separate module.
 
-**Notes**:
+**Test Results**: ✅ 7 tests written, awaiting implementation to compile
+
+**Notes**: Tests written following TDD approach. Implementation requires refactoring HNSWNode (add chunk_id, cached_vector) and HNSWIndex (add chunk_loader, vector_cache, get_vector(), with_chunk_loader(), insert_with_chunk(), preload_chunks()). Backward compatibility maintained via Option types.
 
 #### 4.2 IVF Lazy Loading (Day 8-9)
 
