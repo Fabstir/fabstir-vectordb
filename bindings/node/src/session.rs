@@ -49,6 +49,18 @@ impl VectorDBSession {
             return Err(VectorDBError::invalid_config("user_seed_phrase is required").into());
         }
 
+        // Validate chunking configuration
+        if let Some(chunk_size) = config.chunk_size {
+            if chunk_size == 0 {
+                return Err(VectorDBError::invalid_config("chunk_size must be greater than zero").into());
+            }
+        }
+        if let Some(cache_size) = config.cache_size_mb {
+            if cache_size == 0 {
+                return Err(VectorDBError::invalid_config("cache_size_mb must be greater than zero").into());
+            }
+        }
+
         // Initialize S5 storage
         let s5_config = S5StorageConfig {
             mode: StorageMode::Real,
@@ -57,6 +69,7 @@ impl VectorDBSession {
             mock_server_url: None,
             connection_timeout: Some(30000), // 30 seconds
             retry_attempts: Some(3),
+            encrypt_at_rest: config.encrypt_at_rest, // Use from config (defaults to true if None)
         };
 
         let storage = EnhancedS5Storage::new(s5_config)

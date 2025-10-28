@@ -17,6 +17,15 @@ pub struct VectorDBConfig {
 
     /// Optional: Enable debug logging (default: false)
     pub debug: Option<bool>,
+
+    /// Optional: Encrypt vectors at rest in S5 storage (default: true)
+    pub encrypt_at_rest: Option<bool>,
+
+    /// Optional: Vectors per chunk for storage (default: 10000)
+    pub chunk_size: Option<u32>,
+
+    /// Optional: Cache size in MB for chunk loading (default: 150)
+    pub cache_size_mb: Option<u32>,
 }
 
 #[napi(object)]

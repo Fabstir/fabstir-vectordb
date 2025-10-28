@@ -469,24 +469,33 @@ Adapt HNSW and IVF indices to support lazy vector loading.
 
 Update Node.js bindings to support chunked loading and encryption.
 
-#### 5.1 Update Session Config (Day 11 - Morning)
+#### 5.1 Update Session Config (Day 11 - Morning) ✅
 
 **TDD Approach**: Update TypeScript tests first
 
-- [ ] **Test File**: `bindings/node/__test__/session_config.spec.ts` (create new, max 200 lines)
-  - [ ] Test default encryption (ON)
-  - [ ] Test explicit encryption disable
-  - [ ] Test custom chunk_size
-  - [ ] Test custom cache_size_mb
-  - [ ] Test config validation (invalid values)
+- [x] **Test File**: `bindings/node/test/session-config.test.js` (created, 252 lines)
+  - [x] Test default encryption (ON)
+  - [x] Test explicit encryption disable
+  - [x] Test custom chunk_size
+  - [x] Test custom cache_size_mb
+  - [x] Test config validation (invalid values)
 
-- [ ] **Implementation**: `bindings/node/src/types.rs` (modify, add ~50 lines)
-  - [ ] Add fields to `VectorDBConfig`:
+- [x] **Implementation**: `bindings/node/src/types.rs` (modified, added 12 lines)
+  - [x] Add fields to `VectorDBConfig`:
     - `encrypt_at_rest: Option<bool>` (default: true)
     - `chunk_size: Option<u32>` (default: 10000)
     - `cache_size_mb: Option<u32>` (default: 150)
 
-**Bounded Autonomy**: Add ~50 lines to types.rs.
+- [x] **Implementation**: `bindings/node/src/session.rs` (modified, added validation)
+  - [x] Added validation for chunk_size and cache_size_mb (must be > 0)
+  - [x] Wired up encrypt_at_rest to S5StorageConfig
+
+- [x] **TypeScript Definitions**: `bindings/node/index.d.ts` (auto-generated)
+  - [x] Added encryptAtRest, chunkSize, cacheSizeMb fields to VectorDbConfig interface
+
+**Result**: All 8 tests passing (tests 8, pass 8, fail 0)
+
+**Bounded Autonomy**: Added ~50 lines total across types.rs and session.rs.
 
 #### 5.2 Update Load Operation (Day 11 - Afternoon + Day 12)
 

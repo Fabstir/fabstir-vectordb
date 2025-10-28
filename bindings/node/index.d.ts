@@ -14,6 +14,12 @@ export interface VectorDbConfig {
   memoryBudgetMb?: number;
   /** Optional: Enable debug logging (default: false) */
   debug?: boolean;
+  /** Optional: Encrypt vectors at rest in S5 storage (default: true) */
+  encryptAtRest?: boolean;
+  /** Optional: Vectors per chunk for storage (default: 10000) */
+  chunkSize?: number;
+  /** Optional: Cache size in MB for chunk loading (default: 150) */
+  cacheSizeMb?: number;
 }
 export interface LoadOptions {
   /** Load HNSW immediately, IVF on-demand (default: true) */
