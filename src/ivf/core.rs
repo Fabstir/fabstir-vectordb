@@ -103,13 +103,13 @@ pub struct InvertedList {
 }
 
 impl InvertedList {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             vectors: HashMap::new(),
         }
     }
 
-    fn insert(&mut self, id: VectorId, vector: Vec<f32>) -> Result<(), IVFError> {
+    pub fn insert(&mut self, id: VectorId, vector: Vec<f32>) -> Result<(), IVFError> {
         if self.vectors.contains_key(&id) {
             return Err(IVFError::DuplicateVector(id));
         }

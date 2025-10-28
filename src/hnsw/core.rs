@@ -526,6 +526,26 @@ impl HNSWIndex {
     pub fn nodes(&self) -> &Arc<RwLock<HashMap<VectorId, HNSWNode>>> {
         &self.nodes
     }
+
+    /// Get the maximum level across all nodes (number of layers - 1)
+    pub fn get_max_level(&self) -> usize {
+        let nodes = self.nodes.read().unwrap();
+        nodes.values().map(|node| node.level()).max().unwrap_or(0)
+    }
+
+    /// Get the number of nodes at each level
+    pub fn get_level_distribution(&self) -> Vec<usize> {
+        let nodes = self.nodes.read().unwrap();
+        let max_level = nodes.values().map(|node| node.level()).max().unwrap_or(0);
+
+        let mut distribution = vec![0; max_level + 1];
+        for node in nodes.values() {
+            for level in 0..=node.level() {
+                distribution[level] += 1;
+            }
+        }
+        distribution
+    }
 }
 
 // Thread-safe wrapper implementation
