@@ -302,32 +302,45 @@ impl HNSWIndex {
                         node.neighbors_mut(lc).insert(neighbor_id.clone());
                     }
 
-                    // Add new node to neighbors
+                    // Add new node to neighbors and collect pruning info
+                    let max_conn = if lc == 0 {
+                        self.config.max_connections_layer_0
+                    } else {
+                        self.config.max_connections
+                    };
+
+                    let mut pruning_needed = Vec::new();
                     for neighbor_id in &neighbors {
                         if let Some(neighbor) = nodes_guard.get_mut(neighbor_id) {
                             if neighbor.level >= lc {
                                 neighbor.neighbors_mut(lc).insert(id.clone());
 
-                                // Prune neighbors if exceeded limit
-                                let max_conn = if lc == 0 {
-                                    self.config.max_connections_layer_0
-                                } else {
-                                    self.config.max_connections
-                                };
-
+                                // Check if pruning needed
                                 if neighbor.neighbors(lc).len() > max_conn {
                                     let neighbor_neighbors: Vec<_> =
                                         neighbor.neighbors(lc).iter().cloned().collect();
-                                    let pruned = self.prune_neighbors(
-                                        &neighbor_neighbors,
-                                        neighbor.vector(),
-                                        max_conn,
-                                    );
-                                    neighbor.neighbors_mut(lc).clear();
-                                    for n in pruned {
-                                        neighbor.neighbors_mut(lc).insert(n);
-                                    }
+                                    let neighbor_vector = neighbor.vector().to_vec();
+                                    pruning_needed.push((neighbor_id.clone(), neighbor_neighbors, neighbor_vector));
                                 }
+                            }
+                        }
+                    }
+
+                    // Perform pruning (no mutable borrows held during prune_neighbors call)
+                    //  Include new node vector for distance calculations
+                    for (neighbor_id, neighbor_neighbors, neighbor_vector) in pruning_needed {
+                        let pruned = self.prune_neighbors_with_new_node(
+                            &neighbor_neighbors,
+                            &neighbor_vector,
+                            max_conn,
+                            &nodes_guard,  // Pass nodes reference to avoid deadlock
+                            &id,            // New node ID
+                            &node.vector,   // New node vector
+                        );
+                        if let Some(neighbor) = nodes_guard.get_mut(&neighbor_id) {
+                            neighbor.neighbors_mut(lc).clear();
+                            for n in pruned {
+                                neighbor.neighbors_mut(lc).insert(n);
                             }
                         }
                     }
@@ -516,8 +529,9 @@ impl HNSWIndex {
         neighbors: &[VectorId],
         base_vector: &[f32],
         m: usize,
+        nodes: &HashMap<VectorId, HNSWNode>,  // Accept nodes reference to avoid deadlock
     ) -> Vec<VectorId> {
-        let nodes = self.nodes.read().unwrap();
+        // No lock acquisition here - use passed-in nodes reference
         let mut candidates: Vec<_> = neighbors
             .iter()
             .filter_map(|id| {
@@ -525,6 +539,45 @@ impl HNSWIndex {
                     id: id.clone(),
                     distance: euclidean_distance(base_vector, &node.vector),
                 })
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(Ordering::Equal)
+        });
+        candidates.truncate(m);
+        candidates.into_iter().map(|c| c.id).collect()
+    }
+
+    /// Prune neighbors while considering a new node that's not yet in the nodes map
+    fn prune_neighbors_with_new_node(
+        &self,
+        neighbors: &[VectorId],
+        base_vector: &[f32],
+        m: usize,
+        nodes: &HashMap<VectorId, HNSWNode>,
+        new_node_id: &VectorId,
+        new_node_vector: &[f32],
+    ) -> Vec<VectorId> {
+        // Include both existing nodes and the new node in distance calculations
+        let mut candidates: Vec<_> = neighbors
+            .iter()
+            .filter_map(|id| {
+                if id == new_node_id {
+                    // Use the provided new node vector
+                    Some(SearchCandidate {
+                        id: id.clone(),
+                        distance: euclidean_distance(base_vector, new_node_vector),
+                    })
+                } else {
+                    // Look up existing nodes
+                    nodes.get(id).map(|node| SearchCandidate {
+                        id: id.clone(),
+                        distance: euclidean_distance(base_vector, &node.vector),
+                    })
+                }
             })
             .collect();
 
