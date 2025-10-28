@@ -1,4 +1,5 @@
 pub mod chunk;
+pub mod chunk_cache;
 pub mod storage;
 pub mod types;
 pub mod vector_ops;
@@ -8,3 +9,4 @@ pub use chunk::{
     VectorChunk, ChunkMetadata, Manifest, HNSWManifest, IVFManifest,
     LayerMetadata, ChunkError, MANIFEST_VERSION,
 };
+pub use chunk_cache::{ChunkCache, CacheMetrics};
