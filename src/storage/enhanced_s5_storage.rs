@@ -16,6 +16,7 @@ pub struct EnhancedS5Storage {
     client: Client,
     base_url: String,
     cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
+    encrypt_at_rest: bool,
 }
 
 impl std::fmt::Debug for EnhancedS5Storage {
@@ -97,11 +98,15 @@ impl EnhancedS5Storage {
             }
         };
 
+        // Encryption defaults to true if not specified
+        let encrypt_at_rest = config.encrypt_at_rest.unwrap_or(true);
+
         Ok(Self {
             config,
             client,
             base_url,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            encrypt_at_rest,
         })
     }
 
@@ -145,14 +150,20 @@ impl S5StorageAdapter for EnhancedS5Storage {
             let client = self.client.clone();
             let url = url.clone();
             let data = data.clone();
+            let encrypt_at_rest = self.encrypt_at_rest;
             async move {
                 eprintln!("DEBUG: PUT request to URL: {}", url);
-                let response = client
+                let mut request = client
                     .put(&url)
                     .body(data.clone())
-                    .header("Content-Type", "application/cbor")
-                    .send()
-                    .await?;
+                    .header("Content-Type", "application/cbor");
+
+                // Add encryption header if enabled
+                if encrypt_at_rest {
+                    request = request.header("X-S5-Encryption", "xchacha20-poly1305");
+                }
+
+                let response = request.send().await?;
 
                 eprintln!("DEBUG: Response status: {}", response.status());
                 if response.status().is_success() {
@@ -162,7 +173,7 @@ impl S5StorageAdapter for EnhancedS5Storage {
                     let body = response.text().await.unwrap_or_default();
                     eprintln!("DEBUG: Error response body: {}", body);
                     Err(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other, 
+                        std::io::ErrorKind::Other,
                         format!("PUT failed with status: {}", status)
                     )) as Box<dyn Error + Send + Sync>)
                 }
@@ -315,13 +326,19 @@ impl S5StorageAdapter for EnhancedS5Storage {
     async fn get_stats(&self) -> Result<serde_json::Value, Box<dyn Error + Send + Sync>> {
         let cache = self.cache.read().await;
         let connected = self.is_connected().await;
-        
+
         let mut stats = serde_json::json!({
             "mode": format!("{:?}", self.config.mode),
             "cache_entries": cache.len(),
             "connected": connected,
+            "encryption_enabled": self.encrypt_at_rest,
         });
-        
+
+        // Add encryption algorithm if encryption is enabled
+        if self.encrypt_at_rest {
+            stats["encryption_algorithm"] = serde_json::Value::String("xchacha20-poly1305".to_string());
+        }
+
         // Add URL information based on mode (never include seed phrase)
         match self.config.mode {
             StorageMode::Mock => {
@@ -334,7 +351,7 @@ impl S5StorageAdapter for EnhancedS5Storage {
                 }
             }
         }
-        
+
         Ok(stats)
     }
 }
@@ -396,12 +413,16 @@ impl CoreS5Storage for EnhancedS5Storage {
         let storage_path = self.get_storage_path(path);
         let url = format!("{}{}", self.base_url, storage_path);
 
-        match self.client
+        let mut request = self.client
             .put(&url)
-            .body(data)
-            .send()
-            .await
-        {
+            .body(data);
+
+        // Add encryption header if enabled
+        if self.encrypt_at_rest {
+            request = request.header("X-S5-Encryption", "xchacha20-poly1305");
+        }
+
+        match request.send().await {
             Ok(response) if response.status().is_success() => Ok(()),
             Ok(response) => Err(CoreStorageError::NetworkError(
                 format!("PUT failed with status: {}", response.status())

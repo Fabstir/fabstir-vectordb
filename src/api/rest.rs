@@ -256,6 +256,7 @@ pub async fn create_app(config: ApiConfig) -> Result<Router, anyhow::Error> {
                     seed_phrase: None,
                     connection_timeout: Some(5000),
                     retry_attempts: Some(3),
+                    encrypt_at_rest: None,
                 };
                 let info = StorageConfigInfo {
                     mode: "mock".to_string(),
@@ -275,6 +276,7 @@ pub async fn create_app(config: ApiConfig) -> Result<Router, anyhow::Error> {
             seed_phrase: None,
             connection_timeout: Some(5000),
             retry_attempts: Some(3),
+            encrypt_at_rest: None,
         };
         let info = StorageConfigInfo {
             mode: "mock".to_string(),

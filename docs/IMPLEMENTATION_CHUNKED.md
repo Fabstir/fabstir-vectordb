@@ -36,7 +36,8 @@ session-123/
 - ✅ Phase 2.1: Chunked Save Operations (100%) - Completed 2025-01-28
 - ✅ Phase 2.2: Chunked Load Operations (100%) - Completed 2025-01-28
 - ✅ Phase 2.3: Manifest Upgrade Path (100%) - Completed 2025-01-28
-- ⏳ Phase 3: Enhanced S5 with Encryption (0%)
+- ⏳ Phase 3: Enhanced S5 with Encryption (50%)
+  - ✅ Phase 3.1: Encryption Configuration (100%) - Completed 2025-01-28
 - ⏳ Phase 4: HNSW/IVF Lazy Loading (0%)
 - ⏳ Phase 5: Node.js Bindings Updates (0%)
 - ⏳ Phase 6: Integration Testing & Benchmarks (0%)
@@ -275,32 +276,31 @@ Rewrite `HybridPersister` to use chunked storage with manifest.
 
 Add encryption support and chunk loader.
 
-#### 3.1 Encryption Configuration (Day 4 - Morning)
+#### 3.1 Encryption Configuration (Day 4 - Morning) ✅ 2025-01-28
 
 **TDD Approach**: Write tests first
 
-- [ ] **Test File**: `tests/integration/s5_encryption_tests.rs` (create new, max 200 lines)
-  - [ ] Test encryption ON by default
-  - [ ] Test explicit encryption disable
-  - [ ] Test encryption headers sent to S5.js
-  - [ ] Test decryption on get (handled by S5.js)
-  - [ ] Test encryption with mock S5 backend
+- [x] **Test File**: `tests/integration/s5_encryption_tests.rs` (created, 180 lines, 8 tests passing)
+  - [x] Test encryption ON by default
+  - [x] Test explicit encryption enable
+  - [x] Test explicit encryption disable
+  - [x] Test encryption headers included when enabled
+  - [x] Test encryption headers not included when disabled
+  - [x] Test encryption with mock S5 backend
+  - [x] Test encryption with real S5 mode
+  - [x] Test transparent decryption on get
 
-- [ ] **Implementation**: `src/storage/enhanced_s5_storage.rs` (modify, add ~100 lines)
-  - [ ] Add `encrypt_at_rest: bool` to `S5StorageConfig` (default: true)
-  - [ ] Modify `put_raw()` to include encryption headers
-    - If `encrypt_at_rest == true`, add header:
-      ```json
-      {
-        "X-S5-Encryption": "xchacha20-poly1305"
-      }
-      ```
-  - [ ] Ensure `get_raw()` handles decryption transparently
-  - [ ] Update `get_stats()` to show encryption status
+- [x] **Implementation**: Modified storage layer (~50 lines added)
+  - [x] Add `encrypt_at_rest: Option<bool>` to `S5StorageConfig` (default: true)
+  - [x] Modify `put_raw()` in `enhanced_s5_storage.rs` to include encryption headers
+    - Added header `X-S5-Encryption: xchacha20-poly1305` when enabled
+  - [x] Updated CoreS5Storage::put() to include encryption headers
+  - [x] Modified `get_stats()` to show encryption status and algorithm
+  - [x] Updated factory and API code to initialize new field
 
-**Bounded Autonomy**: Add ~100 lines max to enhanced_s5_storage.rs.
+**Test Results**: ✅ All 40 integration tests passing (32 previous + 8 new encryption tests)
 
-**Notes**:
+**Notes**: Encryption defaults to true via `unwrap_or(true)` in EnhancedS5Storage::new(). Decryption is handled transparently by S5.js backend (no changes needed on GET). Environment variable S5_ENCRYPT_AT_REST can override default.
 
 #### 3.2 Chunk Loader (Day 4 - Afternoon + Day 5 Morning)
 

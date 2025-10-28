@@ -46,6 +46,9 @@ impl S5StorageFactory {
                     retry_attempts: env::var("S5_RETRY_ATTEMPTS")
                         .ok()
                         .and_then(|v| v.parse().ok()),
+                    encrypt_at_rest: env::var("S5_ENCRYPT_AT_REST")
+                        .ok()
+                        .and_then(|v| v.parse().ok()),
                 }
             }
             StorageMode::Real => {
@@ -76,6 +79,9 @@ impl S5StorageFactory {
                         .ok()
                         .and_then(|v| v.parse().ok()),
                     retry_attempts: env::var("S5_RETRY_ATTEMPTS")
+                        .ok()
+                        .and_then(|v| v.parse().ok()),
+                    encrypt_at_rest: env::var("S5_ENCRYPT_AT_REST")
                         .ok()
                         .and_then(|v| v.parse().ok()),
                 }
