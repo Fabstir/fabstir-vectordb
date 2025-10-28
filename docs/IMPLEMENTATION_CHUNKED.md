@@ -36,8 +36,10 @@ session-123/
 - ✅ Phase 2.1: Chunked Save Operations (100%) - Completed 2025-01-28
 - ✅ Phase 2.2: Chunked Load Operations (100%) - Completed 2025-01-28
 - ✅ Phase 2.3: Manifest Upgrade Path (100%) - Completed 2025-01-28
-- ⏳ Phase 3: Enhanced S5 with Encryption (50%)
+- ✅ Phase 3: Enhanced S5 with Encryption (100%) - Completed 2025-01-28
   - ✅ Phase 3.1: Encryption Configuration (100%) - Completed 2025-01-28
+  - ✅ Phase 3.2: Chunk Loader (100%) - Completed 2025-01-28
+  - ✅ Phase 3.3: Update Storage Module (100%) - Completed 2025-01-28
 - ⏳ Phase 4: HNSW/IVF Lazy Loading (0%)
 - ⏳ Phase 5: Node.js Bindings Updates (0%)
 - ⏳ Phase 6: Integration Testing & Benchmarks (0%)
@@ -302,51 +304,58 @@ Add encryption support and chunk loader.
 
 **Notes**: Encryption defaults to true via `unwrap_or(true)` in EnhancedS5Storage::new(). Decryption is handled transparently by S5.js backend (no changes needed on GET). Environment variable S5_ENCRYPT_AT_REST can override default.
 
-#### 3.2 Chunk Loader (Day 4 - Afternoon + Day 5 Morning)
+#### 3.2 Chunk Loader (Day 4 - Afternoon + Day 5 Morning) ✅ 2025-01-28
 
 **TDD Approach**: Write tests first
 
-- [ ] **Test File**: `tests/integration/chunk_loader_tests.rs` (create new, max 300 lines)
-  - [ ] Test load single chunk
-  - [ ] Test load multiple chunks in parallel
-  - [ ] Test chunk not found (404 error)
-  - [ ] Test S5 timeout handling
-  - [ ] Test retry logic with exponential backoff
-  - [ ] Test cache integration
-  - [ ] Test decryption (via S5.js)
-  - [ ] Test concurrent load requests (deduplication)
+- [x] **Test File**: `tests/integration/chunk_loader_tests.rs` (created, 293 lines, 7 tests)
+  - [x] Test load single chunk
+  - [x] Test load multiple chunks in parallel
+  - [x] Test chunk not found (404 error)
+  - [x] Test S5 timeout handling (combined with retry logic test)
+  - [x] Test retry logic with exponential backoff
+  - [x] Test cache integration
+  - [x] Test decryption (via S5.js) (transparent via storage layer)
+  - [x] Test concurrent load requests (deduplication)
 
-- [ ] **Implementation**: `src/storage/chunk_loader.rs` (create new, max 300 lines)
-  - [ ] Define `ChunkLoader` struct
+- [x] **Implementation**: `src/storage/chunk_loader.rs` (created, 238 lines)
+  - [x] Define `ChunkLoader` struct
     - `storage: Arc<dyn S5Storage>`
     - `cache: Arc<ChunkCache>`
-    - `in_flight: Arc<RwLock<HashMap<String, JoinHandle>>>` (deduplication)
-  - [ ] Implement `load_chunk(&self, path: &str) -> Result<VectorChunk>`
+    - `in_flight: Arc<RwLock<HashMap<String, Arc<Mutex<()>>>>>` (deduplication)
+  - [x] Implement `load_chunk(&self, path: &str) -> Result<VectorChunk>`
     - Check cache first
     - If not cached, load from S5 (with retries)
     - Deserialize CBOR
     - Store in cache
     - Return chunk
-  - [ ] Implement `load_chunks_parallel(&self, paths: Vec<String>) -> Result<Vec<VectorChunk>>`
+  - [x] Implement `load_chunks_parallel(&self, paths: Vec<String>) -> Result<Vec<VectorChunk>>`
     - Use `tokio::spawn` for parallel loading
     - Deduplicate in-flight requests
     - Return all chunks
-  - [ ] Implement retry logic with exponential backoff
+  - [x] Implement retry logic with exponential backoff
     - Max retries: 3
     - Backoff: 100ms, 200ms, 400ms
 
-**Bounded Autonomy**: Max 300 lines.
+**Bounded Autonomy**: ✅ 238 lines (within 300 line limit)
 
-#### 3.3 Update Storage Module (Day 5 - Afternoon)
+**Test Results**: ✅ All 7 tests passing (47 total integration tests passing)
 
-- [ ] **Modify**: `src/storage/mod.rs`
-  - [ ] Add `pub mod chunk_loader;`
-  - [ ] Export `ChunkLoader`
+#### 3.3 Update Storage Module (Day 5 - Afternoon) ✅ 2025-01-28
 
-- [ ] **Run Tests**
-  - [ ] `cargo test --lib storage::chunk_loader`
-  - [ ] `cargo test --integration s5_encryption_tests`
-  - [ ] All tests should pass
+- [x] **Modify**: `src/storage/mod.rs`
+  - [x] Add `pub mod chunk_loader;`
+  - [x] Export `ChunkLoader`
+
+- [x] **Modify**: `tests/integration/mod.rs`
+  - [x] Add `pub mod chunk_loader_tests;`
+
+- [x] **Run Tests**
+  - [x] `cargo test --lib storage::chunk_loader` (3 unit tests passing)
+  - [x] `cargo test --test integration_chunked_tests` (47 integration tests passing)
+  - [x] All tests should pass
+
+**Test Results**: ✅ All 47 integration tests passing (40 previous + 7 new chunk loader tests)
 
 **Notes**:
 
