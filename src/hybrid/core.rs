@@ -344,12 +344,12 @@ impl HybridIndex {
             // Use custom n_probe if specified
             if config.ivf_n_probe != historical.config().n_probe {
                 if let Ok(historical_results) =
-                    historical.search_with_config(query, historical_k, config.ivf_n_probe)
+                    historical.search_with_config(query, historical_k, config.ivf_n_probe).await
                 {
                     all_results.extend(historical_results);
                 }
             } else {
-                if let Ok(historical_results) = historical.search(query, historical_k) {
+                if let Ok(historical_results) = historical.search(query, historical_k).await {
                     all_results.extend(historical_results);
                 }
             }

@@ -1,4 +1,5 @@
 use crate::core::types::{SearchResult, VectorId};
+use crate::storage::chunk_loader::ChunkLoader;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,9 @@ pub enum HNSWError {
 
     #[error("Invalid dimension: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
+
+    #[error("Chunk loading error: {0}")]
+    ChunkLoadError(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,6 +139,12 @@ pub struct HNSWIndex {
     entry_point: Arc<RwLock<Option<VectorId>>>,
     rng: Arc<RwLock<StdRng>>,
     dimension: Arc<RwLock<Option<usize>>>,
+    /// Chunk loader for lazy loading vectors from S5 storage
+    chunk_loader: Option<Arc<ChunkLoader>>,
+    /// Cache for lazy-loaded vectors (vector_id -> vector)
+    vector_cache: Arc<RwLock<HashMap<VectorId, Vec<f32>>>>,
+    /// Chunk references for lazy loading (vector_id -> chunk_path)
+    chunk_refs: Arc<RwLock<HashMap<VectorId, String>>>,
 }
 
 impl HNSWIndex {
@@ -150,6 +160,28 @@ impl HNSWIndex {
             entry_point: Arc::new(RwLock::new(None)),
             rng: Arc::new(RwLock::new(rng)),
             dimension: Arc::new(RwLock::new(None)),
+            chunk_loader: None,
+            vector_cache: Arc::new(RwLock::new(HashMap::new())),
+            chunk_refs: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Create a new HNSW index with chunk loader for lazy loading support
+    pub fn with_chunk_loader(config: HNSWConfig, chunk_loader: Option<Arc<ChunkLoader>>) -> Self {
+        let rng = match config.seed {
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_entropy(),
+        };
+
+        Self {
+            config,
+            nodes: Arc::new(RwLock::new(HashMap::new())),
+            entry_point: Arc::new(RwLock::new(None)),
+            rng: Arc::new(RwLock::new(rng)),
+            dimension: Arc::new(RwLock::new(None)),
+            chunk_loader,
+            vector_cache: Arc::new(RwLock::new(HashMap::new())),
+            chunk_refs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -316,6 +348,24 @@ impl HNSWIndex {
         }
 
         Ok(())
+    }
+
+    /// Insert a vector with chunk reference for lazy loading support
+    pub fn insert_with_chunk(
+        &mut self,
+        id: VectorId,
+        vector: Vec<f32>,
+        chunk_id: Option<String>,
+    ) -> Result<(), HNSWError> {
+        // Store chunk reference if provided
+        if let Some(chunk) = chunk_id {
+            self.chunk_refs.write().unwrap().insert(id.clone(), chunk);
+            // Cache the vector for immediate use
+            self.vector_cache.write().unwrap().insert(id.clone(), vector.clone());
+        }
+
+        // Regular insert with the vector (needed for graph building)
+        self.insert(id, vector)
     }
 
     pub fn search(

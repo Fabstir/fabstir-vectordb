@@ -119,7 +119,7 @@ impl IVFIndex {
         })
     }
 
-    pub fn batch_search(
+    pub async fn batch_search(
         &self,
         queries: &[Vec<f32>],
         k: usize,
@@ -127,7 +127,7 @@ impl IVFIndex {
         let mut results = Vec::new();
 
         for query in queries {
-            let query_results = self.search(query, k)?;
+            let query_results = self.search(query, k).await?;
             results.push(query_results);
         }
 
@@ -316,7 +316,7 @@ impl IVFIndex {
         }
     }
 
-    pub fn evaluate_search_quality(
+    pub async fn evaluate_search_quality(
         &self,
         test_queries: &[Vec<f32>],
         k: usize,
@@ -335,10 +335,10 @@ impl IVFIndex {
             let start = Instant::now();
 
             // Search with current n_probe
-            let results = self.search(query, k)?;
+            let results = self.search(query, k).await?;
 
             // Search with all clusters for ground truth
-            let ground_truth = self.search_with_config(query, k, self.config.n_clusters)?;
+            let ground_truth = self.search_with_config(query, k, self.config.n_clusters).await?;
 
             let elapsed = start.elapsed();
             total_time_ms += elapsed.as_secs_f32() * 1000.0;
