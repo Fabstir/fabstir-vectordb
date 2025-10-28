@@ -2,6 +2,7 @@ use crate::core::storage::S5Storage;
 use crate::core::types::{SearchResult, VectorId};
 use crate::hnsw::core::{HNSWConfig, HNSWIndex};
 use crate::ivf::core::{ClusterId, IVFConfig, IVFIndex};
+use crate::storage::chunk_loader::ChunkLoader;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -187,6 +188,8 @@ pub struct HybridIndex {
     initialized: bool,
     recent_count: Arc<RwLock<usize>>,
     historical_count: Arc<RwLock<usize>>,
+    /// Chunk loader for lazy loading vectors from S5 storage (shared between HNSW and IVF)
+    chunk_loader: Option<Arc<ChunkLoader>>,
 }
 
 impl HybridIndex {
@@ -202,6 +205,31 @@ impl HybridIndex {
             initialized: false,
             recent_count: Arc::new(RwLock::new(0)),
             historical_count: Arc::new(RwLock::new(0)),
+            chunk_loader: None,
+        }
+    }
+
+    /// Create a new HybridIndex with chunk loader for lazy loading support
+    pub fn with_chunk_loader(config: HybridConfig, chunk_loader: Option<Arc<ChunkLoader>>) -> Self {
+        // Create indices with chunk loader
+        let recent_index = Arc::new(RwLock::new(HNSWIndex::with_chunk_loader(
+            config.hnsw_config.clone(),
+            chunk_loader.clone(),
+        )));
+        let historical_index = Arc::new(RwLock::new(IVFIndex::with_chunk_loader(
+            config.ivf_config.clone(),
+            chunk_loader.clone(),
+        )));
+
+        Self {
+            config,
+            recent_index,
+            historical_index,
+            timestamps: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            initialized: false,
+            recent_count: Arc::new(RwLock::new(0)),
+            historical_count: Arc::new(RwLock::new(0)),
+            chunk_loader,
         }
     }
 
@@ -240,6 +268,59 @@ impl HybridIndex {
 
     pub async fn insert(&self, id: VectorId, vector: Vec<f32>) -> Result<(), HybridError> {
         self.insert_with_timestamp(id, vector, Utc::now()).await
+    }
+
+    /// Insert a vector with chunk reference for lazy loading support
+    pub async fn insert_with_chunk(
+        &self,
+        id: VectorId,
+        vector: Vec<f32>,
+        timestamp: DateTime<Utc>,
+        chunk_id: Option<String>,
+    ) -> Result<(), HybridError> {
+        if !self.initialized {
+            return Err(HybridError::NotInitialized);
+        }
+
+        // Check for duplicates
+        let timestamps = self.timestamps.read().await;
+        if timestamps.contains_key(&id) {
+            return Err(HybridError::DuplicateVector(id));
+        }
+        drop(timestamps);
+
+        // Determine if vector is recent or historical
+        let now = Utc::now();
+        let age = now
+            .signed_duration_since(timestamp)
+            .to_std()
+            .unwrap_or(Duration::from_secs(0));
+
+        if age < self.config.recent_threshold {
+            // Insert into HNSW (recent) with chunk reference
+            let mut recent = self.recent_index.write().await;
+            recent
+                .insert_with_chunk(id.clone(), vector, chunk_id)
+                .map_err(|e| HybridError::HNSW(e.to_string()))?;
+
+            let mut count = self.recent_count.write().await;
+            *count += 1;
+        } else {
+            // Insert into IVF (historical) with chunk reference
+            let mut historical = self.historical_index.write().await;
+            historical
+                .insert_with_chunk(id.clone(), vector, chunk_id)
+                .map_err(|e| HybridError::IVF(e.to_string()))?;
+
+            let mut count = self.historical_count.write().await;
+            *count += 1;
+        }
+
+        // Store timestamp
+        let mut timestamps = self.timestamps.write().await;
+        timestamps.insert(id, timestamp);
+
+        Ok(())
     }
 
     pub async fn insert_with_timestamp(
@@ -680,6 +761,29 @@ impl HybridIndex {
             initialized: true,
             recent_count: Arc::new(RwLock::new(recent_count)),
             historical_count: Arc::new(RwLock::new(historical_count)),
+            chunk_loader: None,
+        })
+    }
+
+    /// Reconstruct HybridIndex from parts with chunk loader (for chunked deserialization)
+    pub fn from_parts_with_chunk_loader(
+        config: HybridConfig,
+        recent_index: HNSWIndex,
+        historical_index: IVFIndex,
+        timestamps: HashMap<VectorId, DateTime<Utc>>,
+        recent_count: usize,
+        historical_count: usize,
+        chunk_loader: Option<Arc<ChunkLoader>>,
+    ) -> Result<Self, HybridError> {
+        Ok(Self {
+            config,
+            recent_index: Arc::new(RwLock::new(recent_index)),
+            historical_index: Arc::new(RwLock::new(historical_index)),
+            timestamps: Arc::new(RwLock::new(timestamps)),
+            initialized: true,
+            recent_count: Arc::new(RwLock::new(recent_count)),
+            historical_count: Arc::new(RwLock::new(historical_count)),
+            chunk_loader,
         })
     }
 }

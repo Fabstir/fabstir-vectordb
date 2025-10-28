@@ -5,3 +5,4 @@ pub mod s5_encryption_tests;
 pub mod chunk_loader_tests;
 pub mod hnsw_lazy_tests;
 pub mod ivf_lazy_tests;
+pub mod hybrid_lazy_tests;
