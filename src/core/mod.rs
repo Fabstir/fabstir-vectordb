@@ -1,5 +1,10 @@
+pub mod chunk;
 pub mod storage;
 pub mod types;
 pub mod vector_ops;
 
 pub use types::{Vector, VectorId, Embedding, VideoMetadata};
+pub use chunk::{
+    VectorChunk, ChunkMetadata, Manifest, HNSWManifest, IVFManifest,
+    LayerMetadata, ChunkError, MANIFEST_VERSION,
+};

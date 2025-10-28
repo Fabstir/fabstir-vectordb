@@ -46,48 +46,50 @@ session-123/
 
 Foundation types for chunking, manifest, and LRU cache.
 
-#### 1.1 Chunk Types & Manifest (Day 1 - Morning)
+#### 1.1 Chunk Types & Manifest (Day 1 - Morning) ✅ 2025-01-XX
 
 **TDD Approach**: Write tests first, then implement
 
-- [ ] **Test File**: `tests/unit/chunk_tests.rs` (create new, max 300 lines)
-  - [ ] Test `VectorChunk` creation and serialization
-  - [ ] Test `ChunkMetadata` CBOR roundtrip
-  - [ ] Test `Manifest` JSON serialization/deserialization
-  - [ ] Test manifest validation (version checking)
-  - [ ] Test chunk range validation (no overlaps)
-  - [ ] Property tests for chunk partitioning
+- [x] **Test File**: `tests/unit/chunk_tests.rs` (created, 17 tests, all passing)
+  - [x] Test `VectorChunk` creation and serialization
+  - [x] Test `ChunkMetadata` CBOR roundtrip
+  - [x] Test `Manifest` JSON serialization/deserialization
+  - [x] Test manifest validation (version checking)
+  - [x] Test chunk range validation (no overlaps)
+  - [x] Property tests for chunk partitioning
 
-- [ ] **Implementation**: `src/core/chunk.rs` (create new, max 400 lines)
-  - [ ] Define `VectorChunk` struct
+- [x] **Implementation**: `src/core/chunk.rs` (created, ~390 lines)
+  - [x] Define `VectorChunk` struct
     - `chunk_id: String`
     - `vectors: HashMap<VectorId, Vec<f32>>`
     - `start_idx: usize, end_idx: usize`
-  - [ ] Define `ChunkMetadata` struct
+  - [x] Define `ChunkMetadata` struct
     - `chunk_id: String`
     - `cid: Option<String>` (S5 CID after upload)
     - `vector_count: usize`
     - `byte_size: usize`
     - `vector_id_range: (VectorId, VectorId)`
-  - [ ] Define `Manifest` struct
+  - [x] Define `Manifest` struct
     - `version: u32` (current: 2)
     - `chunk_size: usize` (default: 10000)
     - `total_vectors: usize`
     - `chunks: Vec<ChunkMetadata>`
     - `hnsw_structure: Option<HNSWManifest>`
     - `ivf_structure: Option<IVFManifest>`
-  - [ ] Define `HNSWManifest` (graph without vectors)
+  - [x] Define `HNSWManifest` (graph without vectors)
     - `entry_point: VectorId`
     - `layers: Vec<LayerMetadata>`
-    - `node_chunk_map: HashMap<VectorId, String>` (node → chunk_id)
-  - [ ] Define `IVFManifest`
+    - `node_chunk_map: HashMap<String, String>` (node_id → chunk_id)
+  - [x] Define `IVFManifest`
     - `centroids: Vec<Vec<f32>>` (keep in memory, ~256 × 384)
-    - `cluster_assignments: HashMap<ClusterId, Vec<String>>` (cluster → chunk_ids)
-  - [ ] Implement CBOR serialization for chunks
-  - [ ] Implement JSON serialization for manifest
-  - [ ] Add validation methods
+    - `cluster_assignments: HashMap<usize, Vec<String>>` (cluster → chunk_ids)
+  - [x] Implement CBOR serialization for chunks
+  - [x] Implement JSON serialization for manifest
+  - [x] Add validation methods
 
-**Bounded Autonomy**: Max 400 lines. If exceeding, split into multiple files.
+**Bounded Autonomy**: ✅ 390 lines (within 400 line limit)
+
+**Test Results**: ✅ All 17 tests passing
 
 #### 1.2 LRU Chunk Cache (Day 1 - Afternoon)
 
