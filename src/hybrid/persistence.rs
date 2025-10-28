@@ -1,5 +1,5 @@
-use crate::core::chunk::{ChunkMetadata, HNSWManifest, IVFManifest, LayerMetadata, Manifest, VectorChunk};
-use crate::core::storage::{MockS5Storage, S5Storage};
+use crate::core::chunk::{ChunkMetadata, HNSWManifest, IVFManifest, Manifest, VectorChunk};
+use crate::core::storage::S5Storage;
 use crate::core::types::VectorId;
 use crate::hybrid::core::{HybridConfig, HybridIndex};
 use crate::hnsw::persistence::{HNSWPersister, PersistenceError as HNSWPersistenceError};
@@ -123,7 +123,7 @@ pub struct HybridPersister<S: S5Storage> {
     storage: S,
 }
 
-impl<S: S5Storage + Clone> HybridPersister<S> {
+impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
     pub fn new(storage: S) -> Self {
         Self { storage }
     }
@@ -445,6 +445,199 @@ impl<S: S5Storage + Clone> HybridPersister<S> {
             .map_err(|e| PersistenceError::Storage(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Load HybridIndex from chunked storage format
+    ///
+    /// This method loads a previously saved chunked index by:
+    /// 1. Loading and validating the manifest
+    /// 2. Loading all chunks (MVP - true lazy loading in Phase 4)
+    /// 3. Reconstructing HNSW and IVF indices
+    /// 4. Assembling the HybridIndex
+    ///
+    /// # Arguments
+    /// * `path` - Base path where the index was saved
+    ///
+    /// # Returns
+    /// A reconstructed HybridIndex ready for use
+    pub async fn load_index_chunked(&self, path: &str) -> Result<HybridIndex, PersistenceError> {
+        // Step 1: Load manifest.json
+        let manifest_path = format!("{}/manifest.json", path);
+        let manifest_data = self
+            .storage
+            .get(&manifest_path)
+            .await
+            .map_err(|e| PersistenceError::Storage(format!("Failed to load manifest: {}", e)))?
+            .ok_or_else(|| PersistenceError::MissingComponent("manifest.json".to_string()))?;
+
+        let manifest_json = String::from_utf8(manifest_data)
+            .map_err(|e| PersistenceError::Deserialization(format!("Invalid UTF-8 in manifest: {}", e)))?;
+
+        let manifest = Manifest::from_json(&manifest_json)
+            .map_err(|e| PersistenceError::Deserialization(format!("Failed to parse manifest: {}", e)))?;
+
+        // Step 2: Validate version compatibility
+        use crate::core::chunk::MANIFEST_VERSION;
+        if manifest.version > MANIFEST_VERSION {
+            return Err(PersistenceError::IncompatibleVersion {
+                expected: MANIFEST_VERSION,
+                found: manifest.version,
+            });
+        }
+
+        // Step 3: Handle empty index case
+        if manifest.total_vectors == 0 {
+            let config = HybridConfig::default();
+            return Ok(HybridIndex::new(config));
+        }
+
+        // Step 4: Load metadata for config and timestamps
+        let metadata_path = format!("{}/metadata.cbor", path);
+        let metadata_data = self
+            .storage
+            .get(&metadata_path)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?
+            .ok_or_else(|| PersistenceError::MissingComponent("metadata.cbor".to_string()))?;
+
+        let metadata = HybridMetadata::from_cbor(&metadata_data)?;
+
+        // Step 5: Load all chunks in parallel (MVP approach)
+        let mut chunk_tasks = Vec::new();
+
+        for chunk_meta in &manifest.chunks {
+            let chunk_id = chunk_meta.chunk_id.clone();
+            let chunk_path = format!("{}/chunks/{}.cbor", path, chunk_id);
+            let storage_clone = self.storage.clone();
+
+            let task = tokio::spawn(async move {
+                let chunk_data = storage_clone
+                    .get(&chunk_path)
+                    .await
+                    .map_err(|e| PersistenceError::Storage(format!("Failed to load chunk: {}", e)))?
+                    .ok_or_else(|| PersistenceError::MissingComponent(format!("chunk {}", chunk_id)))?;
+
+                VectorChunk::from_cbor(&chunk_data)
+                    .map_err(|e| PersistenceError::Deserialization(format!("Failed to parse chunk: {}", e)))
+            });
+
+            chunk_tasks.push(task);
+        }
+
+        // Wait for all chunks to load
+        let mut all_vectors = Vec::new();
+        for task in chunk_tasks {
+            let chunk = task
+                .await
+                .map_err(|e| PersistenceError::Storage(format!("Task join error: {}", e)))??;
+
+            for (id, vector) in chunk.vectors {
+                all_vectors.push((id, vector));
+            }
+        }
+
+        // Step 6: Reconstruct HNSW index from manifest + chunks
+        let mut hnsw_index = crate::hnsw::core::HNSWIndex::new(metadata.config.hnsw_config.clone());
+
+        if let Some(hnsw_manifest) = &manifest.hnsw_structure {
+            // Reconstruct nodes from chunks
+            for (vector_id, vector) in &all_vectors {
+                // Check if this vector belongs to HNSW (use node_chunk_map)
+                let id_str = vector_id.to_string();
+                if hnsw_manifest.node_chunk_map.contains_key(&id_str) {
+                    // Create node and restore it
+                    let node = crate::hnsw::core::HNSWNode::new(vector_id.clone(), vector.clone());
+                    hnsw_index.restore_node(node)
+                        .map_err(|e| PersistenceError::HNSWError(format!("Failed to restore node: {}", e)))?;
+                }
+            }
+        }
+
+        // Step 7: Reconstruct IVF index from manifest + chunks
+        let mut ivf_index = crate::ivf::core::IVFIndex::new(metadata.config.ivf_config.clone());
+
+        if let Some(ivf_manifest) = &manifest.ivf_structure {
+            // Set trained state with centroids
+            let centroids: Vec<crate::ivf::core::Centroid> = ivf_manifest
+                .centroids
+                .iter()
+                .enumerate()
+                .map(|(i, vec)| crate::ivf::core::Centroid::new(crate::ivf::core::ClusterId(i), vec.clone()))
+                .collect();
+
+            let dimension = if !centroids.is_empty() {
+                centroids[0].dimension()
+            } else if !all_vectors.is_empty() {
+                all_vectors[0].1.len()
+            } else {
+                384 // Default dimension
+            };
+
+            ivf_index.set_trained(centroids, dimension);
+
+            // Reconstruct inverted lists from chunks
+            let mut inverted_lists: HashMap<crate::ivf::core::ClusterId, crate::ivf::core::InvertedList> = HashMap::new();
+
+            // Initialize empty inverted lists for all clusters
+            for cluster_id in 0..metadata.config.ivf_config.n_clusters {
+                inverted_lists.insert(
+                    crate::ivf::core::ClusterId(cluster_id),
+                    crate::ivf::core::InvertedList::new(),
+                );
+            }
+
+            // Distribute vectors to clusters based on manifest assignments
+            for (cluster_id, _chunk_ids) in &ivf_manifest.cluster_assignments {
+                let cluster_key = crate::ivf::core::ClusterId(*cluster_id);
+                let inverted_list = inverted_lists.get_mut(&cluster_key)
+                    .ok_or_else(|| PersistenceError::InvalidData(format!("Invalid cluster ID: {}", cluster_id)))?;
+
+                // Find vectors that belong to this cluster
+                // For MVP, we'll check all vectors and assign based on nearest centroid
+                for (vector_id, vector) in &all_vectors {
+                    let id_str = vector_id.to_string();
+
+                    // Skip if this vector is in HNSW
+                    if let Some(hnsw_manifest) = &manifest.hnsw_structure {
+                        if hnsw_manifest.node_chunk_map.contains_key(&id_str) {
+                            continue;
+                        }
+                    }
+
+                    // Find which cluster this vector belongs to
+                    let assigned_cluster = ivf_index.find_cluster(vector)
+                        .map_err(|e| PersistenceError::IVFError(format!("Failed to find cluster: {}", e)))?;
+
+                    if assigned_cluster == cluster_key {
+                        inverted_list.insert(vector_id.clone(), vector.clone())
+                            .map_err(|e| PersistenceError::IVFError(format!("Failed to insert to inverted list: {}", e)))?;
+                    }
+                }
+            }
+
+            ivf_index.set_inverted_lists(inverted_lists);
+        }
+
+        // Step 8: Load timestamps
+        // For MVP, we'll use current time for all vectors (proper timestamp loading in Phase 4)
+        let mut timestamps = HashMap::new();
+        let now = Utc::now();
+        for (id, _) in &all_vectors {
+            timestamps.insert(id.clone(), now);
+        }
+
+        // Step 9: Assemble HybridIndex using from_parts
+        let hybrid_index = HybridIndex::from_parts(
+            metadata.config,
+            hnsw_index,
+            ivf_index,
+            timestamps,
+            metadata.recent_count,
+            metadata.historical_count,
+        )
+        .map_err(|e| PersistenceError::InvalidData(format!("Failed to reconstruct index: {}", e)))?;
+
+        Ok(hybrid_index)
     }
 
     /// Load HybridIndex from S5 storage
