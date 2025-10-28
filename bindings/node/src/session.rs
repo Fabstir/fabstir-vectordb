@@ -198,13 +198,29 @@ impl VectorDBSession {
             .map(|r| {
                 let vector_id_str = r.vector_id.to_string();
                 // Retrieve metadata or use empty JSON object
-                let metadata = metadata_map
+                let mut metadata = metadata_map
                     .get(&vector_id_str)
                     .cloned()
                     .unwrap_or_else(|| serde_json::json!({}));
 
+                // Extract original ID from metadata (if present), otherwise use hashed VectorId
+                let result_id = if let Some(serde_json::Value::String(original_id)) = metadata.get("_originalId") {
+                    let id = original_id.clone();
+                    // Remove _originalId from metadata before returning to user
+                    if let serde_json::Value::Object(ref mut map) = metadata {
+                        map.remove("_originalId");
+                        // If metadata was wrapped (non-object type), unwrap _userMetadata
+                        if let Some(user_metadata) = map.remove("_userMetadata") {
+                            metadata = user_metadata;
+                        }
+                    }
+                    id
+                } else {
+                    vector_id_str
+                };
+
                 SearchResult {
-                    id: vector_id_str,
+                    id: result_id,
                     score: (1.0 - r.distance) as f64, // Convert distance to similarity score
                     metadata,
                     vector: None, // TODO: Add vector inclusion based on options
@@ -279,9 +295,25 @@ impl VectorDBSession {
                 .await
                 .map_err(|e| VectorDBError::index_error(format!("Failed to add vector: {}", e)))?;
 
-            // Store metadata using VectorId's string representation (not original input.id)
-            // This ensures metadata lookup works correctly in search results
-            metadata_guard.insert(vector_id.to_string(), input.metadata);
+            // Store metadata with original ID preserved
+            // Inject the original user-provided ID into metadata so it's preserved through save/load
+            // Only inject if metadata is an object (not array or primitive)
+            let metadata_with_id = match input.metadata {
+                serde_json::Value::Object(mut map) => {
+                    map.insert("_originalId".to_string(), serde_json::Value::String(input.id.clone()));
+                    serde_json::Value::Object(map)
+                }
+                other => {
+                    // For non-object metadata, wrap it with original ID
+                    serde_json::json!({
+                        "_originalId": input.id,
+                        "_userMetadata": other
+                    })
+                }
+            };
+
+            // Use VectorId's string representation as key for consistent lookup
+            metadata_guard.insert(vector_id.to_string(), metadata_with_id);
         }
 
         Ok(())
