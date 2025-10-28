@@ -404,7 +404,15 @@ impl HNSWIndex {
 
         // Start from top layer of entry point
         let nodes = self.nodes.read().unwrap();
-        let entry_node = nodes.get(&entry_point).unwrap();
+        let entry_node = match nodes.get(&entry_point) {
+            Some(node) => node,
+            None => {
+                return Err(HNSWError::ChunkLoadError(format!(
+                    "Entry point node not found in index. Entry point: {:?}, Total nodes in memory: {}. This may indicate that lazy loading is enabled but the entry point was not properly loaded.",
+                    entry_point, nodes.len()
+                )));
+            }
+        };
         let top_layer = entry_node.level();
 
         let mut nearest = vec![SearchCandidate {
