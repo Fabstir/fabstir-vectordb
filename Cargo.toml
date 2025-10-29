@@ -39,6 +39,7 @@ tracing = "0.1"
 dashmap = "5.5"
 hex = "0.4"
 rand = "0.8"
+lru = "0.12"
 
 # Compression
 zstd = "0.13"
@@ -85,6 +86,10 @@ simd = ["simdeez"]
 
 [[bench]]
 name = "vector_ops"
+harness = false
+
+[[bench]]
+name = "chunked_search_bench"
 harness = false
 
 [[bin]]

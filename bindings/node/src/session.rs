@@ -49,6 +49,18 @@ impl VectorDBSession {
             return Err(VectorDBError::invalid_config("user_seed_phrase is required").into());
         }
 
+        // Validate chunking configuration
+        if let Some(chunk_size) = config.chunk_size {
+            if chunk_size == 0 {
+                return Err(VectorDBError::invalid_config("chunk_size must be greater than zero").into());
+            }
+        }
+        if let Some(cache_size) = config.cache_size_mb {
+            if cache_size == 0 {
+                return Err(VectorDBError::invalid_config("cache_size_mb must be greater than zero").into());
+            }
+        }
+
         // Initialize S5 storage
         let s5_config = S5StorageConfig {
             mode: StorageMode::Real,
@@ -57,6 +69,7 @@ impl VectorDBSession {
             mock_server_url: None,
             connection_timeout: Some(30000), // 30 seconds
             retry_attempts: Some(3),
+            encrypt_at_rest: config.encrypt_at_rest, // Use from config (defaults to true if None)
         };
 
         let storage = EnhancedS5Storage::new(s5_config)
@@ -78,7 +91,7 @@ impl VectorDBSession {
         Ok(Self { state: Some(state) })
     }
 
-    /// Load user's vectors from S5
+    /// Load user's vectors from S5 using chunked storage format
     #[napi]
     pub async unsafe fn load_user_vectors(
         &mut self,
@@ -89,14 +102,14 @@ impl VectorDBSession {
             .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
 
         // Note: lazy_load option is accepted but not yet implemented in HybridPersister
-        // Currently all indices are loaded eagerly
+        // Progress callback support can be added in future iterations
 
         // Create persister with S5 storage backend
         let persister = HybridPersister::new(state.storage.as_ref().clone());
 
-        // Load index from S5 (cid is used as the path prefix)
-        // This loads metadata, timestamps, HNSW index, and IVF index
-        let loaded_index = persister.load_index(&cid).await
+        // Load index from S5 using chunked format (cid is used as the path prefix)
+        // This loads manifest, then chunks in parallel, reconstructs HNSW + IVF indices
+        let loaded_index = persister.load_index_chunked(&cid).await
             .map_err(|e| {
                 use vector_db::hybrid::PersistenceError;
                 match e {
@@ -185,13 +198,29 @@ impl VectorDBSession {
             .map(|r| {
                 let vector_id_str = r.vector_id.to_string();
                 // Retrieve metadata or use empty JSON object
-                let metadata = metadata_map
+                let mut metadata = metadata_map
                     .get(&vector_id_str)
                     .cloned()
                     .unwrap_or_else(|| serde_json::json!({}));
 
+                // Extract original ID from metadata (if present), otherwise use hashed VectorId
+                let result_id = if let Some(serde_json::Value::String(original_id)) = metadata.get("_originalId") {
+                    let id = original_id.clone();
+                    // Remove _originalId from metadata before returning to user
+                    if let serde_json::Value::Object(ref mut map) = metadata {
+                        map.remove("_originalId");
+                        // If metadata was wrapped (non-object type), unwrap _userMetadata
+                        if let Some(user_metadata) = map.remove("_userMetadata") {
+                            metadata = user_metadata;
+                        }
+                    }
+                    id
+                } else {
+                    vector_id_str
+                };
+
                 SearchResult {
-                    id: vector_id_str,
+                    id: result_id,
                     score: (1.0 - r.distance) as f64, // Convert distance to similarity score
                     metadata,
                     vector: None, // TODO: Add vector inclusion based on options
@@ -266,15 +295,31 @@ impl VectorDBSession {
                 .await
                 .map_err(|e| VectorDBError::index_error(format!("Failed to add vector: {}", e)))?;
 
-            // Store metadata using VectorId's string representation (not original input.id)
-            // This ensures metadata lookup works correctly in search results
-            metadata_guard.insert(vector_id.to_string(), input.metadata);
+            // Store metadata with original ID preserved
+            // Inject the original user-provided ID into metadata so it's preserved through save/load
+            // Only inject if metadata is an object (not array or primitive)
+            let metadata_with_id = match input.metadata {
+                serde_json::Value::Object(mut map) => {
+                    map.insert("_originalId".to_string(), serde_json::Value::String(input.id.clone()));
+                    serde_json::Value::Object(map)
+                }
+                other => {
+                    // For non-object metadata, wrap it with original ID
+                    serde_json::json!({
+                        "_originalId": input.id,
+                        "_userMetadata": other
+                    })
+                }
+            };
+
+            // Use VectorId's string representation as key for consistent lookup
+            metadata_guard.insert(vector_id.to_string(), metadata_with_id);
         }
 
         Ok(())
     }
 
-    /// Save index to S5
+    /// Save index to S5 using chunked storage format
     #[napi]
     pub async fn save_to_s5(&self) -> Result<String> {
         let state = self.state.as_ref()
@@ -286,9 +331,10 @@ impl VectorDBSession {
         // Create persister with S5 storage backend
         let persister = HybridPersister::new(state.storage.as_ref().clone());
 
-        // Save index to S5 (saves metadata, timestamps, HNSW index, and IVF index)
+        // Save index to S5 using chunked format
+        // This saves vectors in chunks, plus HNSW/IVF structure, and creates a manifest
         let index_guard = state.index.read().await;
-        persister.save_index(&*index_guard, path).await
+        let _manifest = persister.save_index_chunked(&*index_guard, path).await
             .map_err(|e| {
                 use vector_db::hybrid::PersistenceError;
                 match e {

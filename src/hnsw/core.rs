@@ -1,4 +1,5 @@
 use crate::core::types::{SearchResult, VectorId};
+use crate::storage::chunk_loader::ChunkLoader;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,9 @@ pub enum HNSWError {
 
     #[error("Invalid dimension: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
+
+    #[error("Chunk loading error: {0}")]
+    ChunkLoadError(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,6 +139,12 @@ pub struct HNSWIndex {
     entry_point: Arc<RwLock<Option<VectorId>>>,
     rng: Arc<RwLock<StdRng>>,
     dimension: Arc<RwLock<Option<usize>>>,
+    /// Chunk loader for lazy loading vectors from S5 storage
+    chunk_loader: Option<Arc<ChunkLoader>>,
+    /// Cache for lazy-loaded vectors (vector_id -> vector)
+    vector_cache: Arc<RwLock<HashMap<VectorId, Vec<f32>>>>,
+    /// Chunk references for lazy loading (vector_id -> chunk_path)
+    chunk_refs: Arc<RwLock<HashMap<VectorId, String>>>,
 }
 
 impl HNSWIndex {
@@ -150,6 +160,28 @@ impl HNSWIndex {
             entry_point: Arc::new(RwLock::new(None)),
             rng: Arc::new(RwLock::new(rng)),
             dimension: Arc::new(RwLock::new(None)),
+            chunk_loader: None,
+            vector_cache: Arc::new(RwLock::new(HashMap::new())),
+            chunk_refs: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Create a new HNSW index with chunk loader for lazy loading support
+    pub fn with_chunk_loader(config: HNSWConfig, chunk_loader: Option<Arc<ChunkLoader>>) -> Self {
+        let rng = match config.seed {
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_entropy(),
+        };
+
+        Self {
+            config,
+            nodes: Arc::new(RwLock::new(HashMap::new())),
+            entry_point: Arc::new(RwLock::new(None)),
+            rng: Arc::new(RwLock::new(rng)),
+            dimension: Arc::new(RwLock::new(None)),
+            chunk_loader,
+            vector_cache: Arc::new(RwLock::new(HashMap::new())),
+            chunk_refs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -270,32 +302,45 @@ impl HNSWIndex {
                         node.neighbors_mut(lc).insert(neighbor_id.clone());
                     }
 
-                    // Add new node to neighbors
+                    // Add new node to neighbors and collect pruning info
+                    let max_conn = if lc == 0 {
+                        self.config.max_connections_layer_0
+                    } else {
+                        self.config.max_connections
+                    };
+
+                    let mut pruning_needed = Vec::new();
                     for neighbor_id in &neighbors {
                         if let Some(neighbor) = nodes_guard.get_mut(neighbor_id) {
                             if neighbor.level >= lc {
                                 neighbor.neighbors_mut(lc).insert(id.clone());
 
-                                // Prune neighbors if exceeded limit
-                                let max_conn = if lc == 0 {
-                                    self.config.max_connections_layer_0
-                                } else {
-                                    self.config.max_connections
-                                };
-
+                                // Check if pruning needed
                                 if neighbor.neighbors(lc).len() > max_conn {
                                     let neighbor_neighbors: Vec<_> =
                                         neighbor.neighbors(lc).iter().cloned().collect();
-                                    let pruned = self.prune_neighbors(
-                                        &neighbor_neighbors,
-                                        neighbor.vector(),
-                                        max_conn,
-                                    );
-                                    neighbor.neighbors_mut(lc).clear();
-                                    for n in pruned {
-                                        neighbor.neighbors_mut(lc).insert(n);
-                                    }
+                                    let neighbor_vector = neighbor.vector().to_vec();
+                                    pruning_needed.push((neighbor_id.clone(), neighbor_neighbors, neighbor_vector));
                                 }
+                            }
+                        }
+                    }
+
+                    // Perform pruning (no mutable borrows held during prune_neighbors call)
+                    //  Include new node vector for distance calculations
+                    for (neighbor_id, neighbor_neighbors, neighbor_vector) in pruning_needed {
+                        let pruned = self.prune_neighbors_with_new_node(
+                            &neighbor_neighbors,
+                            &neighbor_vector,
+                            max_conn,
+                            &nodes_guard,  // Pass nodes reference to avoid deadlock
+                            &id,            // New node ID
+                            &node.vector,   // New node vector
+                        );
+                        if let Some(neighbor) = nodes_guard.get_mut(&neighbor_id) {
+                            neighbor.neighbors_mut(lc).clear();
+                            for n in pruned {
+                                neighbor.neighbors_mut(lc).insert(n);
                             }
                         }
                     }
@@ -316,6 +361,24 @@ impl HNSWIndex {
         }
 
         Ok(())
+    }
+
+    /// Insert a vector with chunk reference for lazy loading support
+    pub fn insert_with_chunk(
+        &mut self,
+        id: VectorId,
+        vector: Vec<f32>,
+        chunk_id: Option<String>,
+    ) -> Result<(), HNSWError> {
+        // Store chunk reference if provided
+        if let Some(chunk) = chunk_id {
+            self.chunk_refs.write().unwrap().insert(id.clone(), chunk);
+            // Cache the vector for immediate use
+            self.vector_cache.write().unwrap().insert(id.clone(), vector.clone());
+        }
+
+        // Regular insert with the vector (needed for graph building)
+        self.insert(id, vector)
     }
 
     pub fn search(
@@ -341,7 +404,15 @@ impl HNSWIndex {
 
         // Start from top layer of entry point
         let nodes = self.nodes.read().unwrap();
-        let entry_node = nodes.get(&entry_point).unwrap();
+        let entry_node = match nodes.get(&entry_point) {
+            Some(node) => node,
+            None => {
+                return Err(HNSWError::ChunkLoadError(format!(
+                    "Entry point node not found in index. Entry point: {:?}, Total nodes in memory: {}. This may indicate that lazy loading is enabled but the entry point was not properly loaded.",
+                    entry_point, nodes.len()
+                )));
+            }
+        };
         let top_layer = entry_node.level();
 
         let mut nearest = vec![SearchCandidate {
@@ -466,8 +537,9 @@ impl HNSWIndex {
         neighbors: &[VectorId],
         base_vector: &[f32],
         m: usize,
+        nodes: &HashMap<VectorId, HNSWNode>,  // Accept nodes reference to avoid deadlock
     ) -> Vec<VectorId> {
-        let nodes = self.nodes.read().unwrap();
+        // No lock acquisition here - use passed-in nodes reference
         let mut candidates: Vec<_> = neighbors
             .iter()
             .filter_map(|id| {
@@ -475,6 +547,45 @@ impl HNSWIndex {
                     id: id.clone(),
                     distance: euclidean_distance(base_vector, &node.vector),
                 })
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(Ordering::Equal)
+        });
+        candidates.truncate(m);
+        candidates.into_iter().map(|c| c.id).collect()
+    }
+
+    /// Prune neighbors while considering a new node that's not yet in the nodes map
+    fn prune_neighbors_with_new_node(
+        &self,
+        neighbors: &[VectorId],
+        base_vector: &[f32],
+        m: usize,
+        nodes: &HashMap<VectorId, HNSWNode>,
+        new_node_id: &VectorId,
+        new_node_vector: &[f32],
+    ) -> Vec<VectorId> {
+        // Include both existing nodes and the new node in distance calculations
+        let mut candidates: Vec<_> = neighbors
+            .iter()
+            .filter_map(|id| {
+                if id == new_node_id {
+                    // Use the provided new node vector
+                    Some(SearchCandidate {
+                        id: id.clone(),
+                        distance: euclidean_distance(base_vector, new_node_vector),
+                    })
+                } else {
+                    // Look up existing nodes
+                    nodes.get(id).map(|node| SearchCandidate {
+                        id: id.clone(),
+                        distance: euclidean_distance(base_vector, &node.vector),
+                    })
+                }
             })
             .collect();
 
@@ -525,6 +636,26 @@ impl HNSWIndex {
 
     pub fn nodes(&self) -> &Arc<RwLock<HashMap<VectorId, HNSWNode>>> {
         &self.nodes
+    }
+
+    /// Get the maximum level across all nodes (number of layers - 1)
+    pub fn get_max_level(&self) -> usize {
+        let nodes = self.nodes.read().unwrap();
+        nodes.values().map(|node| node.level()).max().unwrap_or(0)
+    }
+
+    /// Get the number of nodes at each level
+    pub fn get_level_distribution(&self) -> Vec<usize> {
+        let nodes = self.nodes.read().unwrap();
+        let max_level = nodes.values().map(|node| node.level()).max().unwrap_or(0);
+
+        let mut distribution = vec![0; max_level + 1];
+        for node in nodes.values() {
+            for level in 0..=node.level() {
+                distribution[level] += 1;
+            }
+        }
+        distribution
     }
 }
 

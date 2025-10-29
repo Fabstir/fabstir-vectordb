@@ -17,6 +17,9 @@ pub struct S5StorageConfig {
     pub seed_phrase: Option<String>,
     pub connection_timeout: Option<u64>,
     pub retry_attempts: Option<u32>,
+    /// Enable encryption at rest (default: true)
+    /// When enabled, adds X-S5-Encryption header for xchacha20-poly1305 encryption
+    pub encrypt_at_rest: Option<bool>,
 }
 
 #[async_trait]

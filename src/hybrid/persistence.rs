@@ -1,3 +1,4 @@
+use crate::core::chunk::{ChunkMetadata, HNSWManifest, IVFManifest, Manifest, VectorChunk};
 use crate::core::storage::S5Storage;
 use crate::core::types::VectorId;
 use crate::hybrid::core::{HybridConfig, HybridIndex};
@@ -122,7 +123,7 @@ pub struct HybridPersister<S: S5Storage> {
     storage: S,
 }
 
-impl<S: S5Storage + Clone> HybridPersister<S> {
+impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
     pub fn new(storage: S) -> Self {
         Self { storage }
     }
@@ -165,6 +166,508 @@ impl<S: S5Storage + Clone> HybridPersister<S> {
         drop(historical_index_guard);
 
         Ok(())
+    }
+
+    /// Save HybridIndex using chunked storage format
+    ///
+    /// This method partitions vectors into chunks (default 10K vectors per chunk),
+    /// saves each chunk separately, and creates a manifest with index structure.
+    ///
+    /// # Arguments
+    /// * `index` - The HybridIndex to save
+    /// * `path` - Base path for storage (e.g., "session-123")
+    ///
+    /// # Returns
+    /// The manifest with chunk metadata
+    pub async fn save_index_chunked(&self, index: &HybridIndex, path: &str) -> Result<Manifest, PersistenceError> {
+        const CHUNK_SIZE: usize = 10000;
+
+        // Validate path
+        if path.is_empty() {
+            return Err(PersistenceError::InvalidData("Path cannot be empty".to_string()));
+        }
+
+        let stats = index.get_stats();
+        let mut manifest = Manifest::new(CHUNK_SIZE, stats.total_vectors);
+
+        // If empty index, just save manifest
+        if stats.total_vectors == 0 {
+            let manifest_json = manifest
+                .to_json()
+                .map_err(|e| PersistenceError::Serialization(e.to_string()))?;
+
+            let manifest_path = format!("{}/manifest.json", path);
+            self.storage
+                .put(&manifest_path, manifest_json.into_bytes())
+                .await
+                .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+            return Ok(manifest);
+        }
+
+        // Step 1: Collect all vectors from both HNSW and IVF indices
+        let all_vectors = self.collect_all_vectors(index).await?;
+
+        // Step 2: Partition vectors into chunks
+        let chunks = self.partition_into_chunks(all_vectors, CHUNK_SIZE);
+
+        // Step 3: Save each chunk and collect metadata
+        for (chunk_idx, chunk) in chunks.into_iter().enumerate() {
+            let chunk_metadata = self.save_chunk(&chunk, path, chunk_idx).await?;
+            manifest.add_chunk(chunk_metadata);
+        }
+
+        // Step 4: Build HNSW manifest (graph structure without vectors)
+        let hnsw_manifest = self.build_hnsw_manifest(index, &manifest).await?;
+        manifest.set_hnsw_structure(hnsw_manifest);
+
+        // Step 5: Build IVF manifest (centroids and cluster assignments)
+        let ivf_manifest = self.build_ivf_manifest(index, &manifest).await?;
+        manifest.set_ivf_structure(ivf_manifest);
+
+        // Step 6: Save manifest as JSON (unencrypted for fast loading)
+        let manifest_json = manifest
+            .to_json()
+            .map_err(|e| PersistenceError::Serialization(e.to_string()))?;
+
+        let manifest_path = format!("{}/manifest.json", path);
+        self.storage
+            .put(&manifest_path, manifest_json.into_bytes())
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+        // Step 7: Save timestamps
+        let timestamps = index.get_timestamps().await;
+        let serializable_timestamps = SerializableTimestamps::new(timestamps);
+        let timestamps_path = format!("{}/timestamps.cbor", path);
+        self.storage
+            .put(&timestamps_path, serializable_timestamps.to_cbor()?)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+        // Step 8: Save HNSW nodes with full graph structure
+        let recent_index_guard = index.get_recent_index().await;
+        let hnsw_nodes = recent_index_guard.get_all_nodes();
+        drop(recent_index_guard);
+
+        let hnsw_nodes_cbor = serde_cbor::to_vec(&hnsw_nodes)
+            .map_err(|e| PersistenceError::Serialization(e.to_string()))?;
+        let hnsw_nodes_path = format!("{}/hnsw_nodes.cbor", path);
+        self.storage
+            .put(&hnsw_nodes_path, hnsw_nodes_cbor)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+        // Step 9: Save metadata separately (config, counts, etc.)
+        self.save_metadata(index, path).await?;
+
+        Ok(manifest)
+    }
+
+    /// Collect all vectors from the hybrid index
+    async fn collect_all_vectors(&self, index: &HybridIndex) -> Result<Vec<(VectorId, Vec<f32>)>, PersistenceError> {
+        let mut all_vectors = Vec::new();
+
+        // Get vectors from HNSW index (recent vectors)
+        // Extract data immediately and drop lock to avoid deadlock with sync operations
+        let hnsw_nodes = {
+            let recent_index = index.get_recent_index().await;
+            recent_index.get_all_nodes()
+        };
+
+        for node in hnsw_nodes {
+            if !node.is_deleted() {
+                all_vectors.push((node.id().clone(), node.vector().clone()));
+            }
+        }
+
+        // Get vectors from IVF index (historical vectors)
+        // Extract data immediately and drop lock
+        let ivf_vectors = {
+            let historical_index = index.get_historical_index().await;
+            let mut vectors = Vec::new();
+            for inverted_list in historical_index.get_all_inverted_lists().values() {
+                for (id, vector) in &inverted_list.vectors {
+                    vectors.push((id.clone(), vector.clone()));
+                }
+            }
+            vectors
+        };
+
+        all_vectors.extend(ivf_vectors);
+
+        Ok(all_vectors)
+    }
+
+    /// Partition vectors into chunks of specified size
+    fn partition_into_chunks(&self, vectors: Vec<(VectorId, Vec<f32>)>, chunk_size: usize) -> Vec<VectorChunk> {
+        let mut chunks = Vec::new();
+        let total_vectors = vectors.len();
+
+        for (chunk_idx, chunk_vectors) in vectors.chunks(chunk_size).enumerate() {
+            let start_idx = chunk_idx * chunk_size;
+            let end_idx = std::cmp::min(start_idx + chunk_size - 1, total_vectors - 1);
+
+            let mut chunk = VectorChunk::new(
+                format!("chunk-{}", chunk_idx),
+                start_idx,
+                end_idx,
+            );
+
+            for (id, vector) in chunk_vectors {
+                chunk.add_vector(id.clone(), vector.clone());
+            }
+
+            chunks.push(chunk);
+        }
+
+        chunks
+    }
+
+    /// Save a single chunk to S5 storage
+    async fn save_chunk(&self, chunk: &VectorChunk, base_path: &str, chunk_idx: usize) -> Result<ChunkMetadata, PersistenceError> {
+        // Serialize chunk to CBOR
+        let cbor_data = chunk
+            .to_cbor()
+            .map_err(|e| PersistenceError::Serialization(e.to_string()))?;
+
+        // Save to S5
+        let chunk_path = format!("{}/chunks/chunk-{}.cbor", base_path, chunk_idx);
+        self.storage
+            .put(&chunk_path, cbor_data.clone())
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+        // Get first and last vector IDs for range
+        let vector_ids: Vec<&VectorId> = chunk.vectors.keys().collect();
+        let (start_id, end_id) = if !vector_ids.is_empty() {
+            (
+                (*vector_ids.first().unwrap()).clone(),
+                (*vector_ids.last().unwrap()).clone(),
+            )
+        } else {
+            (VectorId::from_string(""), VectorId::from_string(""))
+        };
+
+        // Create metadata
+        Ok(ChunkMetadata::new(
+            format!("chunk-{}", chunk_idx),
+            chunk.len(),
+            cbor_data.len(),
+            start_id,
+            end_id,
+        ))
+    }
+
+    /// Build HNSW manifest from the index
+    async fn build_hnsw_manifest(&self, index: &HybridIndex, manifest: &Manifest) -> Result<HNSWManifest, PersistenceError> {
+        // Extract all data we need while holding the lock, then drop it immediately
+        let (entry_point, level_distribution, nodes) = {
+            let recent_index = index.get_recent_index().await;
+
+            let entry_point = recent_index.entry_point()
+                .unwrap_or_else(|| VectorId::from_string("placeholder"));
+            let level_distribution = recent_index.get_level_distribution();
+            let nodes = recent_index.get_all_nodes();
+
+            (entry_point, level_distribution, nodes)
+        };
+
+        let mut hnsw_manifest = HNSWManifest::new(entry_point);
+
+        // Add layer metadata (distribution of nodes per layer)
+        for (layer_id, node_count) in level_distribution.iter().enumerate() {
+            hnsw_manifest.add_layer(layer_id, *node_count);
+        }
+
+        // Map nodes to chunks
+        for node in nodes {
+            let chunk_id = self.find_chunk_for_vector(node.id(), manifest);
+            hnsw_manifest.add_node_chunk_mapping(node.id().clone(), chunk_id);
+        }
+
+        Ok(hnsw_manifest)
+    }
+
+    /// Build IVF manifest from the index
+    async fn build_ivf_manifest(&self, index: &HybridIndex, manifest: &Manifest) -> Result<IVFManifest, PersistenceError> {
+        // Extract all data we need while holding the lock, then drop it immediately
+        let (centroids, cluster_vector_ids) = {
+            let historical_index = index.get_historical_index().await;
+
+            // Get centroids (keep in memory - these are small)
+            let centroids: Vec<Vec<f32>> = historical_index
+                .get_centroids()
+                .iter()
+                .map(|c| c.vector().clone())
+                .collect();
+
+            // Extract vector IDs per cluster
+            let cluster_vector_ids: Vec<(usize, Vec<VectorId>)> = historical_index
+                .get_all_inverted_lists()
+                .iter()
+                .map(|(cluster_id, inverted_list)| {
+                    (cluster_id.0, inverted_list.vectors.keys().cloned().collect())
+                })
+                .collect();
+
+            (centroids, cluster_vector_ids)
+        };
+
+        let mut ivf_manifest = IVFManifest::new(centroids);
+
+        // Map clusters to chunks
+        for (cluster_id, vector_ids) in cluster_vector_ids {
+            let mut chunk_ids = std::collections::HashSet::new();
+
+            // Find which chunks contain vectors from this cluster
+            for vector_id in &vector_ids {
+                let chunk_id = self.find_chunk_for_vector(vector_id, manifest);
+                chunk_ids.insert(chunk_id);
+            }
+
+            ivf_manifest.add_cluster_assignment(cluster_id, chunk_ids.into_iter().collect());
+        }
+
+        Ok(ivf_manifest)
+    }
+
+    /// Find which chunk contains a given vector
+    fn find_chunk_for_vector(&self, vector_id: &VectorId, manifest: &Manifest) -> String {
+        // Search through chunks to find which one contains this vector
+        for chunk_meta in &manifest.chunks {
+            // Check if vector_id falls within this chunk's range
+            // For now, use a simple heuristic based on vector ID string
+            // In production, we'd maintain a proper vector_id -> chunk_id mapping
+
+            // Simple approach: check if the chunk was saved and assume linear ordering
+            // This works because we partition vectors sequentially
+            // TODO: Maintain explicit mapping during partitioning for production use
+        }
+
+        // Default to first chunk if not found
+        if manifest.chunks.is_empty() {
+            "chunk-0".to_string()
+        } else {
+            // For MVP: distribute evenly across chunks based on hash
+            let chunk_idx = vector_id.to_string().len() % manifest.chunks.len();
+            manifest.chunks[chunk_idx].chunk_id.clone()
+        }
+    }
+
+    /// Save metadata (timestamps, config, etc.)
+    async fn save_metadata(&self, index: &HybridIndex, path: &str) -> Result<(), PersistenceError> {
+        let metadata = HybridMetadata::from_index(index);
+        let metadata_cbor = metadata.to_cbor()?;
+
+        let metadata_path = format!("{}/metadata.cbor", path);
+        self.storage
+            .put(&metadata_path, metadata_cbor)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Load HybridIndex from chunked storage format
+    ///
+    /// This method loads a previously saved chunked index by:
+    /// 1. Loading and validating the manifest
+    /// 2. Loading all chunks (MVP - true lazy loading in Phase 4)
+    /// 3. Reconstructing HNSW and IVF indices
+    /// 4. Assembling the HybridIndex
+    ///
+    /// # Arguments
+    /// * `path` - Base path where the index was saved
+    ///
+    /// # Returns
+    /// A reconstructed HybridIndex ready for use
+    pub async fn load_index_chunked(&self, path: &str) -> Result<HybridIndex, PersistenceError> {
+        // Step 1: Load manifest.json
+        let manifest_path = format!("{}/manifest.json", path);
+        let manifest_data = self
+            .storage
+            .get(&manifest_path)
+            .await
+            .map_err(|e| PersistenceError::Storage(format!("Failed to load manifest: {}", e)))?
+            .ok_or_else(|| PersistenceError::MissingComponent("manifest.json".to_string()))?;
+
+        let manifest_json = String::from_utf8(manifest_data)
+            .map_err(|e| PersistenceError::Deserialization(format!("Invalid UTF-8 in manifest: {}", e)))?;
+
+        let manifest = Manifest::from_json(&manifest_json)
+            .map_err(|e| PersistenceError::Deserialization(format!("Failed to parse manifest: {}", e)))?;
+
+        // Step 2: Validate version compatibility
+        use crate::core::chunk::MANIFEST_VERSION;
+        if manifest.version > MANIFEST_VERSION {
+            return Err(PersistenceError::IncompatibleVersion {
+                expected: MANIFEST_VERSION,
+                found: manifest.version,
+            });
+        }
+
+        // Step 3: Handle empty index case
+        if manifest.total_vectors == 0 {
+            let config = HybridConfig::default();
+            return Ok(HybridIndex::new(config));
+        }
+
+        // Step 4: Load metadata for config and timestamps
+        let metadata_path = format!("{}/metadata.cbor", path);
+        let metadata_data = self
+            .storage
+            .get(&metadata_path)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?
+            .ok_or_else(|| PersistenceError::MissingComponent("metadata.cbor".to_string()))?;
+
+        let metadata = HybridMetadata::from_cbor(&metadata_data)?;
+
+        // Step 5: Load all chunks in parallel (MVP approach)
+        let mut chunk_tasks = Vec::new();
+
+        for chunk_meta in &manifest.chunks {
+            let chunk_id = chunk_meta.chunk_id.clone();
+            let chunk_path = format!("{}/chunks/{}.cbor", path, chunk_id);
+            let storage_clone = self.storage.clone();
+
+            let task = tokio::spawn(async move {
+                let chunk_data = storage_clone
+                    .get(&chunk_path)
+                    .await
+                    .map_err(|e| PersistenceError::Storage(format!("Failed to load chunk: {}", e)))?
+                    .ok_or_else(|| PersistenceError::MissingComponent(format!("chunk {}", chunk_id)))?;
+
+                VectorChunk::from_cbor(&chunk_data)
+                    .map_err(|e| PersistenceError::Deserialization(format!("Failed to parse chunk: {}", e)))
+            });
+
+            chunk_tasks.push(task);
+        }
+
+        // Wait for all chunks to load
+        let mut all_vectors = Vec::new();
+        for task in chunk_tasks {
+            let chunk = task
+                .await
+                .map_err(|e| PersistenceError::Storage(format!("Task join error: {}", e)))??;
+
+            for (id, vector) in chunk.vectors {
+                all_vectors.push((id, vector));
+            }
+        }
+
+        // Step 6: Reconstruct HNSW index from saved nodes with full graph structure
+        let mut hnsw_index = crate::hnsw::core::HNSWIndex::new(metadata.config.hnsw_config.clone());
+
+        // Load HNSW nodes with full graph structure
+        let hnsw_nodes_path = format!("{}/hnsw_nodes.cbor", path);
+        if let Ok(Some(hnsw_nodes_data)) = self.storage.get(&hnsw_nodes_path).await {
+            let hnsw_nodes: Vec<crate::hnsw::core::HNSWNode> = serde_cbor::from_slice(&hnsw_nodes_data)
+                .map_err(|e| PersistenceError::Deserialization(format!("Failed to deserialize HNSW nodes: {}", e)))?;
+
+            // Restore nodes with full graph structure (neighbors, layers, etc.)
+            for node in hnsw_nodes {
+                hnsw_index.restore_node(node)
+                    .map_err(|e| PersistenceError::HNSWError(format!("Failed to restore node: {}", e)))?;
+            }
+
+            // Restore entry point if available
+            if let Some(hnsw_manifest) = &manifest.hnsw_structure {
+                hnsw_index.set_entry_point(hnsw_manifest.entry_point.clone());
+            }
+        }
+
+        // Step 7: Reconstruct IVF index from manifest + chunks
+        let mut ivf_index = crate::ivf::core::IVFIndex::new(metadata.config.ivf_config.clone());
+
+        if let Some(ivf_manifest) = &manifest.ivf_structure {
+            // Set trained state with centroids
+            let centroids: Vec<crate::ivf::core::Centroid> = ivf_manifest
+                .centroids
+                .iter()
+                .enumerate()
+                .map(|(i, vec)| crate::ivf::core::Centroid::new(crate::ivf::core::ClusterId(i), vec.clone()))
+                .collect();
+
+            let dimension = if !centroids.is_empty() {
+                centroids[0].dimension()
+            } else if !all_vectors.is_empty() {
+                all_vectors[0].1.len()
+            } else {
+                384 // Default dimension
+            };
+
+            ivf_index.set_trained(centroids, dimension);
+
+            // Reconstruct inverted lists from chunks
+            let mut inverted_lists: HashMap<crate::ivf::core::ClusterId, crate::ivf::core::InvertedList> = HashMap::new();
+
+            // Initialize empty inverted lists for all clusters
+            for cluster_id in 0..metadata.config.ivf_config.n_clusters {
+                inverted_lists.insert(
+                    crate::ivf::core::ClusterId(cluster_id),
+                    crate::ivf::core::InvertedList::new(),
+                );
+            }
+
+            // Distribute vectors to clusters based on manifest assignments
+            for (cluster_id, _chunk_ids) in &ivf_manifest.cluster_assignments {
+                let cluster_key = crate::ivf::core::ClusterId(*cluster_id);
+                let inverted_list = inverted_lists.get_mut(&cluster_key)
+                    .ok_or_else(|| PersistenceError::InvalidData(format!("Invalid cluster ID: {}", cluster_id)))?;
+
+                // Find vectors that belong to this cluster
+                // For MVP, we'll check all vectors and assign based on nearest centroid
+                for (vector_id, vector) in &all_vectors {
+                    let id_str = vector_id.to_string();
+
+                    // Skip if this vector is in HNSW
+                    if let Some(hnsw_manifest) = &manifest.hnsw_structure {
+                        if hnsw_manifest.node_chunk_map.contains_key(&id_str) {
+                            continue;
+                        }
+                    }
+
+                    // Find which cluster this vector belongs to
+                    let assigned_cluster = ivf_index.find_cluster(vector)
+                        .map_err(|e| PersistenceError::IVFError(format!("Failed to find cluster: {}", e)))?;
+
+                    if assigned_cluster == cluster_key {
+                        inverted_list.insert(vector_id.clone(), vector.clone())
+                            .map_err(|e| PersistenceError::IVFError(format!("Failed to insert to inverted list: {}", e)))?;
+                    }
+                }
+            }
+
+            ivf_index.set_inverted_lists(inverted_lists);
+        }
+
+        // Step 8: Load timestamps from storage
+        let timestamps_path = format!("{}/timestamps.cbor", path);
+        let timestamps_data = self
+            .storage
+            .get(&timestamps_path)
+            .await
+            .map_err(|e| PersistenceError::Storage(e.to_string()))?
+            .ok_or_else(|| PersistenceError::MissingComponent("timestamps.cbor".to_string()))?;
+
+        let serializable_timestamps = SerializableTimestamps::from_cbor(&timestamps_data)?;
+        let timestamps = serializable_timestamps.timestamps;
+
+        // Step 9: Assemble HybridIndex using from_parts
+        let hybrid_index = HybridIndex::from_parts(
+            metadata.config,
+            hnsw_index,
+            ivf_index,
+            timestamps,
+            metadata.recent_count,
+            metadata.historical_count,
+        )
+        .map_err(|e| PersistenceError::InvalidData(format!("Failed to reconstruct index: {}", e)))?;
+
+        Ok(hybrid_index)
     }
 
     /// Load HybridIndex from S5 storage

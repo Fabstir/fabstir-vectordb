@@ -1,9 +1,11 @@
 use crate::core::types::{SearchResult, VectorId};
 use crate::core::vector_ops::euclidean_distance_scalar;
+use crate::storage::chunk_loader::ChunkLoader;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Error)]
@@ -25,6 +27,12 @@ pub enum IVFError {
 
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+
+    #[error("Chunk loading error: {0}")]
+    ChunkLoadError(String),
+
+    #[error("Vector not found: {0:?}")]
+    VectorNotFound(VectorId),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -100,16 +108,21 @@ pub struct TrainResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InvertedList {
     pub vectors: HashMap<VectorId, Vec<f32>>,
+    /// Chunk references for lazy loading (vector_id -> chunk_id)
+    /// When present, vectors are loaded from chunks on demand
+    #[serde(default)]
+    pub chunk_refs: HashMap<VectorId, String>,
 }
 
 impl InvertedList {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             vectors: HashMap::new(),
+            chunk_refs: HashMap::new(),
         }
     }
 
-    fn insert(&mut self, id: VectorId, vector: Vec<f32>) -> Result<(), IVFError> {
+    pub fn insert(&mut self, id: VectorId, vector: Vec<f32>) -> Result<(), IVFError> {
         if self.vectors.contains_key(&id) {
             return Err(IVFError::DuplicateVector(id));
         }
@@ -117,8 +130,21 @@ impl InvertedList {
         Ok(())
     }
 
-    fn len(&self) -> usize {
-        self.vectors.len()
+    /// Insert with chunk reference for lazy loading
+    pub fn insert_with_chunk(&mut self, id: VectorId, chunk_id: String) -> Result<(), IVFError> {
+        if self.chunk_refs.contains_key(&id) || self.vectors.contains_key(&id) {
+            return Err(IVFError::DuplicateVector(id));
+        }
+        self.chunk_refs.insert(id, chunk_id);
+        Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.vectors.len() + self.chunk_refs.len()
+    }
+
+    pub fn has_chunk_refs(&self) -> bool {
+        !self.chunk_refs.is_empty()
     }
 }
 
@@ -130,6 +156,10 @@ pub struct IVFIndex {
     pub(crate) trained: bool,
     pub(crate) rng: StdRng,
     pub(crate) total_vectors: usize,
+    /// Chunk loader for lazy loading vectors from S5 storage
+    pub(crate) chunk_loader: Option<Arc<ChunkLoader>>,
+    /// Cache for lazy-loaded vectors (vector_id -> vector)
+    pub(crate) vector_cache: Arc<RwLock<HashMap<VectorId, Vec<f32>>>>,
 }
 
 impl IVFIndex {
@@ -151,6 +181,32 @@ impl IVFIndex {
             trained: false,
             rng,
             total_vectors: 0,
+            chunk_loader: None,
+            vector_cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Create IVF index with chunk loader for lazy loading
+    pub fn with_chunk_loader(config: IVFConfig, chunk_loader: Option<Arc<ChunkLoader>>) -> Self {
+        if !config.is_valid() {
+            panic!("Invalid IVFConfig");
+        }
+
+        let rng = match config.seed {
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_entropy(),
+        };
+
+        Self {
+            config,
+            centroids: Vec::new(),
+            inverted_lists: HashMap::new(),
+            dimension: None,
+            trained: false,
+            rng,
+            total_vectors: 0,
+            chunk_loader,
+            vector_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -391,6 +447,42 @@ impl IVFIndex {
         Ok(())
     }
 
+    /// Insert vector with chunk assignment for lazy loading
+    pub fn insert_with_chunk(&mut self, id: VectorId, vector: Vec<f32>, chunk_id: Option<String>) -> Result<(), IVFError> {
+        if !self.trained {
+            return Err(IVFError::NotTrained);
+        }
+
+        if let Some(dim) = self.dimension {
+            if vector.len() != dim {
+                return Err(IVFError::DimensionMismatch {
+                    expected: dim,
+                    actual: vector.len(),
+                });
+            }
+        }
+
+        // Find nearest cluster
+        let cluster_id = self.find_nearest_centroid(&vector);
+
+        // Insert into inverted list based on whether we have chunk_loader
+        let list = self.inverted_lists.get_mut(&cluster_id).unwrap();
+
+        if let Some(chunk) = chunk_id {
+            // Lazy loading mode: store chunk reference
+            list.insert_with_chunk(id.clone(), chunk)?;
+            // Cache the vector for immediate use
+            self.vector_cache.write().unwrap().insert(id, vector);
+        } else {
+            // Regular mode: store vector inline
+            list.insert(id, vector)?;
+        }
+
+        self.total_vectors += 1;
+
+        Ok(())
+    }
+
     pub fn find_cluster(&self, vector: &[f32]) -> Result<ClusterId, IVFError> {
         if !self.trained {
             return Err(IVFError::NotTrained);
@@ -442,11 +534,77 @@ impl IVFIndex {
             .collect()
     }
 
-    pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>, IVFError> {
-        self.search_with_config(query, k, self.config.n_probe)
+    /// Get sizes of all clusters without loading vectors
+    pub fn get_cluster_sizes(&self) -> HashMap<ClusterId, usize> {
+        self.inverted_lists
+            .iter()
+            .map(|(id, list)| (*id, list.len()))
+            .collect()
     }
 
-    pub fn search_with_config(
+    /// Get all vectors for a specific cluster (lazy loads from chunks if needed)
+    pub async fn get_cluster_vectors(&self, cluster_id: ClusterId) -> Result<Vec<(VectorId, Vec<f32>)>, IVFError> {
+        let list = self.inverted_lists.get(&cluster_id)
+            .ok_or_else(|| IVFError::InvalidConfig(format!("Cluster {:?} not found", cluster_id)))?;
+
+        let mut vectors = Vec::new();
+
+        // First, add vectors that are already in memory
+        for (id, vector) in &list.vectors {
+            vectors.push((id.clone(), vector.clone()));
+        }
+
+        // Then, lazy load vectors from chunks if we have chunk references
+        if !list.chunk_refs.is_empty() {
+            if let Some(chunk_loader) = &self.chunk_loader {
+                // Group vector IDs by chunk_id to minimize chunk loads
+                let mut chunks_to_load: HashMap<String, Vec<VectorId>> = HashMap::new();
+
+                for (vector_id, chunk_id) in &list.chunk_refs {
+                    // Check cache first
+                    if let Some(cached_vector) = self.vector_cache.read().unwrap().get(vector_id) {
+                        vectors.push((vector_id.clone(), cached_vector.clone()));
+                        continue;
+                    }
+
+                    // Need to load from chunk
+                    chunks_to_load.entry(chunk_id.clone())
+                        .or_insert_with(Vec::new)
+                        .push(vector_id.clone());
+                }
+
+                // Load chunks and extract vectors
+                for (chunk_id, vector_ids) in chunks_to_load {
+                    let chunk_path = chunk_id; // chunk_id is the path
+                    let chunk = chunk_loader.load_chunk(&chunk_path)
+                        .await
+                        .map_err(|e| IVFError::ChunkLoadError(e.to_string()))?;
+
+                    // Extract requested vectors from chunk
+                    for vector_id in vector_ids {
+                        if let Some(vector) = chunk.vectors.get(&vector_id) {
+                            // Cache the vector
+                            self.vector_cache.write().unwrap().insert(vector_id.clone(), vector.clone());
+                            vectors.push((vector_id, vector.clone()));
+                        }
+                    }
+                }
+            } else {
+                // No chunk loader but have chunk_refs - this is an error
+                return Err(IVFError::ChunkLoadError(
+                    "Chunk references found but no chunk loader available".to_string()
+                ));
+            }
+        }
+
+        Ok(vectors)
+    }
+
+    pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>, IVFError> {
+        self.search_with_config(query, k, self.config.n_probe).await
+    }
+
+    pub async fn search_with_config(
         &self,
         query: &[f32],
         k: usize,
@@ -478,15 +636,16 @@ impl IVFIndex {
         cluster_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         cluster_distances.truncate(n_probe);
 
-        // Search within selected clusters
+        // Search within selected clusters (with lazy loading support)
         let mut results = Vec::new();
 
         for (cluster_id, _) in cluster_distances {
-            if let Some(list) = self.inverted_lists.get(&cluster_id) {
-                for (id, vector) in &list.vectors {
-                    let distance = euclidean_distance_scalar(query, vector);
-                    results.push(SearchResult::new(id.clone(), distance, None));
-                }
+            // Use get_cluster_vectors for lazy loading support
+            let cluster_vectors = self.get_cluster_vectors(cluster_id).await?;
+
+            for (id, vector) in cluster_vectors {
+                let distance = euclidean_distance_scalar(query, &vector);
+                results.push(SearchResult::new(id, distance, None));
             }
         }
 

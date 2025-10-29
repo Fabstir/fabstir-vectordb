@@ -14,6 +14,12 @@ export interface VectorDbConfig {
   memoryBudgetMb?: number;
   /** Optional: Enable debug logging (default: false) */
   debug?: boolean;
+  /** Optional: Encrypt vectors at rest in S5 storage (default: true) */
+  encryptAtRest?: boolean;
+  /** Optional: Vectors per chunk for storage (default: 10000) */
+  chunkSize?: number;
+  /** Optional: Cache size in MB for chunk loading (default: 150) */
+  cacheSizeMb?: number;
 }
 export interface LoadOptions {
   /** Load HNSW immediately, IVF on-demand (default: true) */
@@ -72,7 +78,7 @@ export type VectorDBSession = VectorDbSession;
 export declare class VectorDbSession {
   /** Create a new vector DB session */
   static create(config: VectorDBConfig): Promise<VectorDbSession>;
-  /** Load user's vectors from S5 */
+  /** Load user's vectors from S5 using chunked storage format */
   loadUserVectors(
     cid: string,
     options?: LoadOptions | undefined | null,
@@ -85,7 +91,7 @@ export declare class VectorDbSession {
   ): Promise<Array<SearchResult>>;
   /** Add vectors to the index */
   addVectors(vectors: Array<VectorInput>): Promise<void>;
-  /** Save index to S5 */
+  /** Save index to S5 using chunked storage format */
   saveToS5(): Promise<string>;
   /** Get session statistics */
   getStats(): SessionStats;

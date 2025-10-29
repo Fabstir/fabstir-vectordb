@@ -75,6 +75,7 @@ impl SerializableInvertedList {
     pub fn to_inverted_list(self) -> InvertedList {
         InvertedList {
             vectors: self.vectors,
+            chunk_refs: HashMap::new(), // Empty for deserialized lists (backward compat)
         }
     }
 
