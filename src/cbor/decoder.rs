@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 use crate::types::{Vector, VideoNFTMetadata, S5Metadata};

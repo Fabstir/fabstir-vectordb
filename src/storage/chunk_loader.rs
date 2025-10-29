@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;

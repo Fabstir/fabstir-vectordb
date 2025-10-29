@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::core::chunk::{ChunkMetadata, HNSWManifest, IVFManifest, Manifest, VectorChunk};
 use crate::core::storage::S5Storage;
 use crate::core::types::VectorId;

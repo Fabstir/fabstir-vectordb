@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Chunk types for chunked vector storage with lazy loading
 use crate::core::types::VectorId;
 use serde::{Deserialize, Serialize};

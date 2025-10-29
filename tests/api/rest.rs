@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum_test::TestServer;
 use serde_json::json;

@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Integration tests for chunked load operations
 use vector_db::core::storage::{MockS5Storage, S5Storage};
 use vector_db::core::types::VectorId;

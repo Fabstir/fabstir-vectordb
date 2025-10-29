@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Unit tests for chunk types and manifest structures
 use vector_db::core::chunk::{
     ChunkMetadata, HNSWManifest, IVFManifest, LayerMetadata, Manifest, VectorChunk,

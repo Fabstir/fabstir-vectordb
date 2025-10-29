@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Unit tests for LRU chunk cache
 use vector_db::core::chunk::VectorChunk;
 use vector_db::core::chunk_cache::ChunkCache;

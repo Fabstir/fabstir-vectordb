@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::core::types::{SearchResult, VectorId};
 use crate::core::vector_ops::euclidean_distance_scalar;
 use crate::storage::chunk_loader::ChunkLoader;

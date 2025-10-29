@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Integration tests for S5 encryption configuration
 use vector_db::storage::s5_adapter::{S5StorageAdapter, S5StorageConfig, StorageMode};
 use vector_db::storage::enhanced_s5_storage::EnhancedS5Storage;

@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 #![deny(clippy::all)]
 
 use napi_derive::napi;

@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::core::types::*;
 use crate::hybrid::{HybridConfig, HybridIndex, TimestampedVector};
 use crate::storage::{S5StorageFactory, EnhancedS5Storage, Storage};

@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 pub mod chunked_save_tests;
 pub mod chunked_load_tests;
 pub mod manifest_version_tests;

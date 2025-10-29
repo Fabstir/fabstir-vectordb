@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { VectorDbSession } = require('../index.js');

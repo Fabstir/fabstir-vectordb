@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use approx::assert_relative_eq;
 use vector_db::core::types::*;
 

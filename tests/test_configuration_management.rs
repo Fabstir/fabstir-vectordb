@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 // tests/test_configuration_management.rs
 
 use vector_db::storage::{S5StorageConfig, StorageMode, S5StorageFactory, EnhancedS5Storage, S5StorageAdapter};

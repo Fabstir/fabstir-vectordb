@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use chrono::{TimeZone, Utc};
 use std::time::Duration;
 use tokio;

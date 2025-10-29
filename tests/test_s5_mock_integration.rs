@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 // tests/test_s5_mock_integration.rs
 // Phase 8.2 - Comprehensive Mock Server Integration Tests
 

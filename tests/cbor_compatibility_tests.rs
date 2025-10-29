@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 // tests/cbor_compatibility_tests.rs
 // Tests to ensure CBOR encoding is deterministic and compatible with s5 patterns
 

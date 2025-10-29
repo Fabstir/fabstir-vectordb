@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 // tests/s5_client_tests.rs
 // TDD tests for S5 client integration with enhanced s5.js
 

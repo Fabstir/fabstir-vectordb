@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::api::rest::*;
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};

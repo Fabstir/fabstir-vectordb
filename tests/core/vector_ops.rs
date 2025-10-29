@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use proptest::prelude::*;
 use vector_db::core::types::*;
 use vector_db::core::vector_ops::*;

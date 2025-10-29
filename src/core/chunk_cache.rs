@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// LRU cache for vector chunks with metrics tracking
 use crate::core::chunk::VectorChunk;
 use lru::LruCache;

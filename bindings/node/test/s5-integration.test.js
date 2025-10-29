@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 // NOTE: These integration tests require S5 storage to be available
 // at the configured portal URL (http://127.0.0.1:5522).
 // If S5 is not running, these tests will fail with connection errors.

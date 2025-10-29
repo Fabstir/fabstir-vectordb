@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio;

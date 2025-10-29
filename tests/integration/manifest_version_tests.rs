@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Integration tests for manifest version handling and upgrade paths
 use vector_db::core::chunk::{Manifest, MANIFEST_VERSION};
 use vector_db::core::storage::{MockS5Storage, S5Storage};

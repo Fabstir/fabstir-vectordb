@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 // tests/api/test_rest_api.rs
 use anyhow::Result;
 use reqwest::{Client, StatusCode};

@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Performance benchmarks for chunked storage search operations
 /// Measures cold cache, warm cache, chunk loading, and cache effectiveness
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};

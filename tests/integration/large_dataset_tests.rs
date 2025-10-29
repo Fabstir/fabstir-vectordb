@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Integration tests for large dataset performance
 /// Tests chunked storage with 100K, 500K, and 1M vectors
 use std::collections::HashMap;

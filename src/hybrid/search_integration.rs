@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::core::types::{SearchResult, VectorId};
 use crate::hybrid::core::{HybridError, HybridIndex, SearchConfig};
 use chrono::{DateTime, Utc};

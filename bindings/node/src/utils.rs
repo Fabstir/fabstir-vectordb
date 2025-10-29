@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 /// Helper to convert JS array to Rust vector
 #[allow(dead_code)]
 pub fn js_array_to_vec_f32(arr: Vec<f64>) -> Vec<f32> {

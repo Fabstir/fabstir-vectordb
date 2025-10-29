@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;

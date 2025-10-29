@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 // tests/s5_storage_tests.rs
 // TDD tests for S5 Storage implementation using actual video NFT metadata schema
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Fabstir
+// SPDX-License-Identifier: BUSL-1.1
+
 use criterion::{black_box, Criterion};
 use std::time::Duration;
 use vector_db::core::types::*;
