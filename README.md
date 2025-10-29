@@ -17,12 +17,14 @@ A high-performance, decentralized vector database built on S5 storage with hybri
 ## Performance (v0.1.1 - Phase 6 Tested)
 
 **100K Vectors (384-dim, all-MiniLM-L6-v2):**
+
 - **Load Time**: 685ms (6x faster than v0.1.0)
 - **Memory Usage**: 64 MB (10x reduction vs v0.1.0)
 - **Search Latency**: 58ms warm cache, ~1000ms cold cache
 - **Encryption Overhead**: <5% (ChaCha20-Poly1305)
 
 **Key Improvements:**
+
 - Chunked storage with lazy loading
 - LRU cache for hot chunks (default: 150 MB)
 - Encryption enabled by default
@@ -119,7 +121,7 @@ S5_MODE=real                               # Use real S5 network
 S5_PORTAL_URL=http://host.docker.internal:5522  # Enhanced S5.js endpoint
 VECTOR_DIMENSION=384                       # Vector dimensions
 
-# Server Configuration  
+# Server Configuration
 VECTOR_DB_PORT=7533                        # Server port
 VECTOR_DB_HOST=0.0.0.0                    # Bind to all interfaces
 ```
@@ -139,6 +141,7 @@ Permanent decentralized storage
 ## API Examples
 
 ### Insert Vector
+
 ```bash
 curl -X POST http://localhost:7533/api/v1/vectors \
   -H "Content-Type: application/json" \
@@ -150,6 +153,7 @@ curl -X POST http://localhost:7533/api/v1/vectors \
 ```
 
 ### Search Vectors
+
 ```bash
 curl -X POST http://localhost:7533/api/v1/search \
   -H "Content-Type: application/json" \
@@ -162,11 +166,13 @@ curl -X POST http://localhost:7533/api/v1/search \
 ## Docker Containers
 
 ### Production Container (Lightweight ~100MB)
+
 - **Image**: fabstir-vectordb-prod:latest
 - **Port**: 7533
 - **File**: Dockerfile.production
 
-### Development Container  
+### Development Container
+
 - **Image**: fabstir-vectordb-fabstir-ai-vector-db
 - **Workspace**: /workspace (mounted from host)
 - **File**: docker-compose.dev.yml
@@ -174,6 +180,7 @@ curl -X POST http://localhost:7533/api/v1/search \
 ## Troubleshooting
 
 ### Timeout Errors
+
 ```bash
 # Check timeout setting
 grep "unwrap_or" src/storage/enhanced_s5_storage.rs
@@ -181,6 +188,7 @@ grep "unwrap_or" src/storage/enhanced_s5_storage.rs
 ```
 
 ### Port Conflicts
+
 ```bash
 # Kill process on port
 fuser -k 7533/tcp
@@ -190,6 +198,7 @@ lsof -i :7533
 ```
 
 ### Container Not Connecting to S5
+
 ```bash
 # Test from inside container
 docker exec vector-db-prod curl http://host.docker.internal:5522/health
@@ -198,6 +207,7 @@ docker exec vector-db-prod curl http://host.docker.internal:5522/health
 ## Development
 
 ### Building from Source
+
 ```bash
 # Build release binary
 cargo build --release --bin server
@@ -207,6 +217,7 @@ docker build -f Dockerfile.production -t fabstir-vectordb-prod:latest .
 ```
 
 ### Running Tests
+
 ```bash
 # Unit tests
 cargo test
@@ -219,8 +230,7 @@ STORAGE_MODE=real cargo test --ignored
 
 1. **Timeout Critical**: Real S5 operations take 5-10 seconds, not milliseconds
 2. **Container Networking**: Use `host.docker.internal` for container→host communication
-3. **Workspace Mount**: Dev container must mount to `/workspace` for Claude Code
-4. **Port Configuration**: Production uses 7533, dev uses 7530-7532
+3. **Port Configuration**: Production uses 7533, dev uses 7530-7532
 
 ## Related Projects
 

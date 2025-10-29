@@ -69,6 +69,7 @@ Fabstir AI Vector Database is a high-performance, decentralized vector database 
 ```
 
 **v0.1.1 Architecture Highlights**:
+
 - **Chunked Storage**: Vectors partitioned into 10K chunks with lazy loading
 - **LRU Cache**: 150 MB default cache for hot chunks
 - **Encryption**: ChaCha20-Poly1305 at rest, <5% overhead
@@ -135,7 +136,7 @@ curl -X POST http://localhost:7533/api/v1/search \
 **Best for:** Browser applications, portable deployments, edge computing
 
 ```javascript
-import init, { VectorDB } from '@fabstir/vector-db-wasm';
+import init, { VectorDB } from "@fabstir/vector-db-wasm";
 
 await init();
 const db = new VectorDB();
@@ -145,15 +146,15 @@ const results = db.search(query_vector, k);
 
 ### Interface Comparison
 
-| Feature | Node.js Native | REST API | WASM |
-|---------|---------------|----------|------|
-| **Performance** | ⭐⭐⭐⭐⭐ Best | ⭐⭐⭐ Good | ⭐⭐⭐⭐ Very Good |
-| **Memory Efficiency** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| **S5 Persistence** | ✅ Full support | ✅ Full support | ⚠️ Limited |
-| **Chunked Storage** | ✅ Native | ✅ Native | ⚠️ Limited |
-| **Native Metadata** | ✅ Objects | ❌ JSON strings | ❌ JSON strings |
-| **Use Case** | SDK integration | Microservices | Browser apps |
-| **Setup Complexity** | Low | Medium | Low |
+| Feature               | Node.js Native  | REST API        | WASM               |
+| --------------------- | --------------- | --------------- | ------------------ |
+| **Performance**       | ⭐⭐⭐⭐⭐ Best | ⭐⭐⭐ Good     | ⭐⭐⭐⭐ Very Good |
+| **Memory Efficiency** | ⭐⭐⭐⭐⭐      | ⭐⭐⭐⭐        | ⭐⭐⭐             |
+| **S5 Persistence**    | ✅ Full support | ✅ Full support | ⚠️ Limited         |
+| **Chunked Storage**   | ✅ Native       | ✅ Native       | ⚠️ Limited         |
+| **Native Metadata**   | ✅ Objects      | ❌ JSON strings | ❌ JSON strings    |
+| **Use Case**          | SDK integration | Microservices   | Browser apps       |
+| **Setup Complexity**  | Low             | Medium          | Low                |
 
 ## Installation & Setup
 
@@ -262,24 +263,25 @@ For Node.js native bindings, configuration is passed programmatically:
 
 ```javascript
 const config = {
-  s5Portal: 'http://localhost:5522',      // Enhanced S5.js endpoint
-  userSeedPhrase: 'your-seed-phrase',     // 12 or 24 words
-  sessionId: 'session-123',               // Unique session ID
+  s5Portal: "http://localhost:5522", // Enhanced S5.js endpoint
+  userSeedPhrase: "your-seed-phrase", // 12 or 24 words
+  sessionId: "session-123", // Unique session ID
 
   // Optional: Chunked storage tuning
-  chunkSize: 10000,                       // 10K vectors/chunk (default)
-  cacheSizeMb: 150,                       // 150 MB cache (default)
-  encryptAtRest: true,                    // ChaCha20-Poly1305 (default)
+  chunkSize: 10000, // 10K vectors/chunk (default)
+  cacheSizeMb: 150, // 150 MB cache (default)
+  encryptAtRest: true, // ChaCha20-Poly1305 (default)
 
   // Optional: Advanced settings
-  memoryBudgetMb: 512,                    // Memory limit (default: 512)
-  debug: false,                           // Debug logging (default: false)
+  memoryBudgetMb: 512, // Memory limit (default: 512)
+  debug: false, // Debug logging (default: false)
 };
 
 const session = await VectorDbSession.create(config);
 ```
 
 **Tuning Guidelines:**
+
 - **Memory-constrained:** `chunkSize: 5000`, `cacheSizeMb: 75`
 - **Performance-focused:** `chunkSize: 20000`, `cacheSizeMb: 300`
 - **Large datasets (1M+):** `chunkSize: 20000`, `cacheSizeMb: 300`
@@ -300,7 +302,7 @@ services:
       context: .
       dockerfile: Dockerfile.production
     ports:
-      - "7533:7533"  # Production REST API
+      - "7533:7533" # Production REST API
     environment:
       - S5_PORTAL_URL=http://host.docker.internal:5522
       - VECTOR_DIMENSION=${VECTOR_DIMENSION:-384}
@@ -327,6 +329,7 @@ GET /health
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy",
@@ -350,6 +353,7 @@ Response:
 ```
 
 The `storage` object provides information about the S5 storage backend:
+
 - `mode`: Either "mock" or "real" depending on configuration
 - `connected`: Whether the storage backend is accessible
 - `base_url`: Present for mock mode, shows the mock server URL
@@ -375,6 +379,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "id": "vec_12345",
@@ -406,6 +411,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "successful": 2,
@@ -421,6 +427,7 @@ GET /vectors/{id}
 ```
 
 Response:
+
 ```json
 {
   "id": "vec_12345",
@@ -469,6 +476,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "results": [
@@ -497,6 +505,7 @@ GET /admin/statistics
 ```
 
 Response:
+
 ```json
 {
   "total_vectors": 10000,
@@ -517,6 +526,7 @@ POST /admin/migrate
 ```
 
 Response:
+
 ```json
 {
   "vectors_migrated": 500,
@@ -531,6 +541,7 @@ POST /admin/rebalance
 ```
 
 Response:
+
 ```json
 {
   "clusters_modified": 32,
@@ -551,6 +562,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "backup_size": 52428800,
@@ -568,6 +580,7 @@ GET /stream/updates
 ```
 
 Event stream format:
+
 ```
 event: vector_added
 data: {"id": "vec_12345", "index": "recent"}
@@ -594,12 +607,42 @@ The following features are planned for future releases:
 
 **Status:** 🚧 Not yet implemented
 
-The MCP (Model Context Protocol) server will enable direct integration with LLMs like Claude. This feature is planned for a future release and will provide:
+The MCP (Model Context Protocol) server will enable privacy-preserving integration with LLMs while maintaining full user control over data. MCP is a **local protocol** that runs on your machine, ensuring data never leaves your control.
 
-- Direct vector search tool for LLMs
-- Vector insertion/management via MCP
-- Seamless integration with Claude Desktop and other MCP clients
+**Key Privacy Features:**
+
+- ✅ **Local Protocol**: Runs entirely on your machine, not a cloud service
+- ✅ **Decentralized Storage**: All vector data remains in S5 decentralized storage
+- ✅ **User Sovereignty**: Full control via seed phrases, no third-party access
+- ✅ **No Data Centralization**: Vectors never touch centralized servers
+- ✅ **Open Standard**: Works with any MCP-compatible LLM (local models, etc.)
+
+**Planned Capabilities:**
+
+- Direct vector search tool for MCP-compatible LLMs
+- Vector insertion/management via local MCP protocol
 - Real-time context retrieval for AI applications
+- Seamless integration with MCP clients (Claude Desktop, Continue, etc.)
+- Support for local/open-source LLMs via MCP
+
+**Privacy Architecture:**
+
+```
+User's Machine (Full Control)
+├─ MCP Client (local LLM, etc.)
+│  └─ Local MCP Protocol
+│     └─ Fabstir Vector DB (localhost)
+│        └─ S5 Decentralized Storage
+│           └─ User's encrypted data (seed phrase controlled)
+```
+
+**Why MCP for Platformless AI:**
+
+- Maintains decentralization principles
+- No centralized intermediaries
+- User controls all data access
+- Works with any LLM that supports MCP
+- Privacy-first by design
 
 **Tracking:** See GitHub issues for progress updates.
 
@@ -609,9 +652,9 @@ The MCP (Model Context Protocol) server will enable direct integration with LLMs
 
 ```typescript
 interface Vector {
-  id: string;           // Unique identifier (e.g., "vec_12345")
-  vector: number[];     // Float32 array of embeddings
-  metadata?: object;    // Optional metadata
+  id: string; // Unique identifier (e.g., "vec_12345")
+  vector: number[]; // Float32 array of embeddings
+  metadata?: object; // Optional metadata
 }
 ```
 
@@ -655,8 +698,8 @@ interface VideoMetadata {
   description?: string;
   tags: string[];
   duration_seconds: number;
-  upload_timestamp: string;  // ISO 8601
-  model_name: string;        // Embedding model used
+  upload_timestamp: string; // ISO 8601
+  model_name: string; // Embedding model used
   extra: Record<string, any>;
 }
 ```
@@ -666,8 +709,8 @@ interface VideoMetadata {
 ```typescript
 interface SearchResult {
   id: string;
-  distance: number;    // Euclidean distance
-  score: number;       // Normalized similarity score (0-1)
+  distance: number; // Euclidean distance
+  score: number; // Normalized similarity score (0-1)
   metadata?: object;
 }
 ```
@@ -747,18 +790,21 @@ pub struct S5Config {
 ### Seed Phrase Management
 
 The S5 seed phrase can be:
+
 1. Set via `S5_SEED_PHRASE` environment variable
 2. Loaded from a file via `S5_SEED_PHRASE_FILE` environment variable
 3. Generated automatically and stored securely
 4. Retrieved via admin API (with proper authentication)
 
 #### Using Environment Variable
+
 ```bash
 # Set custom seed phrase (must be 12 or 24 words)
 export S5_SEED_PHRASE="your twelve word mnemonic seed phrase here for s5 storage access"
 ```
 
 #### Using Seed Phrase File (Recommended)
+
 ```bash
 # Create seed phrase file with proper permissions
 echo "your twelve word seed phrase goes here like this example phrase" > ~/.s5-seed
@@ -769,6 +815,7 @@ export S5_SEED_PHRASE_FILE=~/.s5-seed
 ```
 
 **Security Notes**:
+
 - Seed phrases must contain exactly 12 or 24 words
 - On Unix systems, seed phrase files with world-readable permissions will trigger a warning
 - The file method takes precedence over the environment variable if both are set
@@ -789,18 +836,19 @@ export S5_PORTAL_URL=http://localhost:5524
 ### Automatic Activation
 
 HAMT (Hash Array Mapped Trie) sharding automatically activates when:
+
 - Vector count exceeds `HAMT_ACTIVATION_THRESHOLD` (default: 1000)
 - Provides O(log n) lookup performance
 - Maintains compatibility with S5's HAMT implementation
 
 ### Performance Characteristics
 
-| Vector Count | Without HAMT | With HAMT   |
-|-------------|--------------|-------------|
-| < 1,000     | O(1)         | O(1)        |
-| 10,000      | O(n)         | O(log n)    |
-| 100,000     | O(n)         | O(log n)    |
-| 1,000,000   | O(n)         | O(log n)    |
+| Vector Count | Without HAMT | With HAMT |
+| ------------ | ------------ | --------- |
+| < 1,000      | O(1)         | O(1)      |
+| 10,000       | O(n)         | O(log n)  |
+| 100,000      | O(n)         | O(log n)  |
+| 1,000,000    | O(n)         | O(log n)  |
 
 ### Configuration Options
 
@@ -834,16 +882,16 @@ Root Node
 #### 1. Initialize Client (TypeScript)
 
 ```typescript
-import { VectorDBClient } from 'fabstir-ai-vector-db';
+import { VectorDBClient } from "fabstir-ai-vector-db";
 
 const client = new VectorDBClient({
-  apiUrl: 'http://localhost:7530',
-  apiKey: process.env.VECTOR_DB_API_KEY
+  apiUrl: "http://localhost:7530",
+  apiKey: process.env.VECTOR_DB_API_KEY,
 });
 
 // Check health
 const health = await client.health();
-console.log('Database status:', health.status);
+console.log("Database status:", health.status);
 ```
 
 #### 2. Insert Vectors
@@ -852,20 +900,20 @@ console.log('Database status:', health.status);
 // Single vector insertion
 const vector = await generateEmbedding("AI tutorial video");
 const result = await client.insertVector({
-  id: 'vec_001',
+  id: "vec_001",
   vector: vector,
   metadata: {
-    video_id: 'video_123',
-    title: 'Introduction to AI',
-    tags: ['ai', 'tutorial', 'beginner']
-  }
+    video_id: "video_123",
+    title: "Introduction to AI",
+    tags: ["ai", "tutorial", "beginner"],
+  },
 });
 
 // Batch insertion
 const vectors = await Promise.all([
   generateEmbedding("Machine learning basics"),
   generateEmbedding("Deep learning fundamentals"),
-  generateEmbedding("Neural networks explained")
+  generateEmbedding("Neural networks explained"),
 ]);
 
 const batchResult = await client.batchInsert({
@@ -874,9 +922,9 @@ const batchResult = await client.batchInsert({
     vector: vec,
     metadata: {
       video_id: `video_${i + 100}`,
-      title: `Lesson ${i + 1}`
-    }
-  }))
+      title: `Lesson ${i + 1}`,
+    },
+  })),
 });
 ```
 
@@ -887,7 +935,7 @@ const batchResult = await client.batchInsert({
 const queryVector = await generateEmbedding("How do neural networks work?");
 const results = await client.search({
   vector: queryVector,
-  k: 5
+  k: 5,
 });
 
 // Advanced search with options
@@ -895,17 +943,17 @@ const advancedResults = await client.search({
   vector: queryVector,
   k: 10,
   filter: {
-    tags: ['neural-networks', 'deep-learning']
+    tags: ["neural-networks", "deep-learning"],
   },
   options: {
     search_recent: true,
     search_historical: true,
-    hnsw_ef: 100,        // Higher = better quality, slower
-    ivf_n_probe: 32,     // More clusters = better quality, slower
+    hnsw_ef: 100, // Higher = better quality, slower
+    ivf_n_probe: 32, // More clusters = better quality, slower
     timeout_ms: 5000,
     include_metadata: true,
-    score_threshold: 0.75
-  }
+    score_threshold: 0.75,
+  },
 });
 ```
 
@@ -921,8 +969,8 @@ const recentResults = await client.search({
   options: {
     search_recent: true,
     search_historical: false,
-    recent_threshold_override: 24 * 60 * 60 * 1000  // 24 hours in ms
-  }
+    recent_threshold_override: 24 * 60 * 60 * 1000, // 24 hours in ms
+  },
 });
 ```
 
@@ -935,11 +983,11 @@ const filteredResults = await client.search({
   k: 20,
   filter: {
     $and: [
-      { tags: { $in: ['ai', 'ml', 'deep-learning'] } },
+      { tags: { $in: ["ai", "ml", "deep-learning"] } },
       { duration_seconds: { $gte: 300, $lte: 1800 } },
-      { model_name: 'text-embedding-ada-002' }
-    ]
-  }
+      { model_name: "text-embedding-ada-002" },
+    ],
+  },
 });
 ```
 
@@ -947,14 +995,14 @@ const filteredResults = await client.search({
 
 ```typescript
 // Subscribe to real-time updates
-const eventSource = new EventSource('http://localhost:7530/stream/updates');
+const eventSource = new EventSource("http://localhost:7530/stream/updates");
 
-eventSource.addEventListener('vector_added', (event) => {
+eventSource.addEventListener("vector_added", (event) => {
   const data = JSON.parse(event.data);
-  console.log('New vector added:', data.id);
+  console.log("New vector added:", data.id);
 });
 
-eventSource.addEventListener('migration_completed', (event) => {
+eventSource.addEventListener("migration_completed", (event) => {
   const data = JSON.parse(event.data);
   console.log(`Migration completed: ${data.vectors_migrated} vectors`);
 });
@@ -965,8 +1013,8 @@ eventSource.addEventListener('migration_completed', (event) => {
 #### 1. OpenAI Integration
 
 ```typescript
-import OpenAI from 'openai';
-import { VectorDBClient } from 'fabstir-ai-vector-db';
+import OpenAI from "openai";
+import { VectorDBClient } from "fabstir-ai-vector-db";
 
 const openai = new OpenAI();
 const vectorDB = new VectorDBClient();
@@ -975,20 +1023,20 @@ async function indexVideo(videoTranscript: string, metadata: any) {
   // Generate embedding
   const response = await openai.embeddings.create({
     model: "text-embedding-ada-002",
-    input: videoTranscript
+    input: videoTranscript,
   });
-  
+
   const embedding = response.data[0].embedding;
-  
+
   // Store in vector database
   await vectorDB.insertVector({
     id: `vec_${metadata.video_id}`,
     vector: embedding,
     metadata: {
       ...metadata,
-      model_name: 'text-embedding-ada-002',
-      indexed_at: new Date().toISOString()
-    }
+      model_name: "text-embedding-ada-002",
+      indexed_at: new Date().toISOString(),
+    },
   });
 }
 
@@ -996,19 +1044,19 @@ async function semanticSearch(query: string) {
   // Generate query embedding
   const response = await openai.embeddings.create({
     model: "text-embedding-ada-002",
-    input: query
+    input: query,
   });
-  
+
   const queryEmbedding = response.data[0].embedding;
-  
+
   // Search similar videos
   return await vectorDB.search({
     vector: queryEmbedding,
     k: 10,
     options: {
       include_metadata: true,
-      score_threshold: 0.8
-    }
+      score_threshold: 0.8,
+    },
   });
 }
 ```
@@ -1016,19 +1064,19 @@ async function semanticSearch(query: string) {
 #### 2. LangChain Integration
 
 ```typescript
-import { VectorDBStore } from 'fabstir-ai-vector-db/langchain';
-import { OpenAIEmbeddings } from 'langchain/embeddings/openai';
+import { VectorDBStore } from "fabstir-ai-vector-db/langchain";
+import { OpenAIEmbeddings } from "langchain/embeddings/openai";
 
 // Create vector store
 const vectorStore = new VectorDBStore({
   embeddings: new OpenAIEmbeddings(),
-  apiUrl: 'http://localhost:7530'
+  apiUrl: "http://localhost:7530",
 });
 
 // Add documents
 await vectorStore.addDocuments([
   { pageContent: "AI fundamentals", metadata: { topic: "ai" } },
-  { pageContent: "Machine learning basics", metadata: { topic: "ml" } }
+  { pageContent: "Machine learning basics", metadata: { topic: "ml" } },
 ]);
 
 // Similarity search
@@ -1040,16 +1088,16 @@ const results = await vectorStore.similaritySearch("What is AI?", 5);
 #### 1. Cohere Embeddings
 
 ```typescript
-import cohere from 'cohere-ai';
+import cohere from "cohere-ai";
 
 cohere.init(process.env.COHERE_API_KEY);
 
 async function generateCohereEmbedding(text: string) {
   const response = await cohere.embed({
     texts: [text],
-    model: 'embed-english-v3.0'
+    model: "embed-english-v3.0",
   });
-  
+
   return response.body.embeddings[0];
 }
 ```
@@ -1065,7 +1113,7 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 def index_video(video_text, metadata):
     # Generate embedding
     embedding = model.encode(video_text).tolist()
-    
+
     # Store in vector database
     response = requests.post(
         'http://localhost:7530/vectors',
@@ -1084,12 +1132,12 @@ def index_video(video_text, metadata):
 // Using your own embedding model
 async function customEmbedding(text: string): Promise<number[]> {
   // Your custom embedding logic
-  const response = await fetch('http://your-model-api/embed', {
-    method: 'POST',
+  const response = await fetch("http://your-model-api/embed", {
+    method: "POST",
     body: JSON.stringify({ text }),
-    headers: { 'Content-Type': 'application/json' }
+    headers: { "Content-Type": "application/json" },
   });
-  
+
   const data = await response.json();
   return data.embedding;
 }
@@ -1097,12 +1145,12 @@ async function customEmbedding(text: string): Promise<number[]> {
 // Use with vector database
 const embedding = await customEmbedding("Video content");
 await vectorDB.insertVector({
-  id: 'custom_vec_001',
+  id: "custom_vec_001",
   vector: embedding,
   metadata: {
-    model_name: 'custom-model-v1',
-    dimension: embedding.length
-  }
+    model_name: "custom-model-v1",
+    dimension: embedding.length,
+  },
 });
 ```
 
@@ -1114,13 +1162,13 @@ await vectorDB.insertVector({
 
 #### 100K Vectors - Production Ready ✅
 
-| Metric | v0.1.0 | v0.1.1 | Improvement |
-|--------|--------|--------|-------------|
-| **Load Time** | ~4000ms | **685ms** | **6x faster** |
-| **Memory Usage** | ~640 MB | **64 MB** | **10x reduction** |
-| **Search (warm)** | ~60ms | **58ms** | Similar |
-| **Search (cold)** | ~1200ms | **~1000ms** | ~17% faster |
-| **Encryption Overhead** | N/A | **<5%** | ChaCha20-Poly1305 |
+| Metric                  | v0.1.0  | v0.1.1      | Improvement       |
+| ----------------------- | ------- | ----------- | ----------------- |
+| **Load Time**           | ~4000ms | **685ms**   | **6x faster**     |
+| **Memory Usage**        | ~640 MB | **64 MB**   | **10x reduction** |
+| **Search (warm)**       | ~60ms   | **58ms**    | Similar           |
+| **Search (cold)**       | ~1200ms | **~1000ms** | ~17% faster       |
+| **Encryption Overhead** | N/A     | **<5%**     | ChaCha20-Poly1305 |
 
 #### Key Improvements (v0.1.1)
 
@@ -1135,27 +1183,32 @@ await vectorDB.insertVector({
 #### 1. Memory Usage (v0.1.1 Chunked Storage)
 
 **With Lazy Loading (Default):**
+
 - **100K vectors**: ~64 MB (10 chunks × 6.4 MB/chunk cached)
 - **500K vectors**: ~128 MB (cache limited to ~10 chunks)
 - **1M+ vectors**: ~150-200 MB (LRU cache maintains constant memory)
 
 **Formula:**
+
 ```
 Memory ≈ cacheSizeMb + (active_chunks × ~6-15 MB)
 ```
 
 **Tuning:**
+
 - Memory-constrained: `cacheSizeMb: 75` → ~100 MB total
 - Performance-focused: `cacheSizeMb: 300` → ~350 MB total
 
 #### 2. Storage Requirements (384-dim vectors)
 
 **v0.1.1 with Chunked Storage + Encryption:**
+
 - **Raw**: 384 × 4 bytes = 1.5 KB per vector
 - **Chunked + Encrypted**: ~1.6 KB per vector (<5% overhead)
 - **Indexes (HNSW)**: Additional ~500 bytes per vector
 
 **Examples:**
+
 - 100K vectors: ~200 MB (storage)
 - 1M vectors: ~2 GB (storage)
 - 10M vectors: ~20 GB (storage)
@@ -1165,23 +1218,23 @@ Memory ≈ cacheSizeMb + (active_chunks × ~6-15 MB)
 ```typescript
 // Optimize for speed (lower quality)
 const fastSearch = {
-  hnsw_ef: 50,      // Lower ef = faster
-  ivf_n_probe: 8,   // Fewer probes = faster
-  timeout_ms: 1000
+  hnsw_ef: 50, // Lower ef = faster
+  ivf_n_probe: 8, // Fewer probes = faster
+  timeout_ms: 1000,
 };
 
 // Optimize for quality (slower)
 const qualitySearch = {
-  hnsw_ef: 200,     // Higher ef = better quality
-  ivf_n_probe: 32,  // More probes = better quality
-  timeout_ms: 5000
+  hnsw_ef: 200, // Higher ef = better quality
+  ivf_n_probe: 32, // More probes = better quality
+  timeout_ms: 5000,
 };
 
 // Balanced approach
 const balancedSearch = {
   hnsw_ef: 100,
   ivf_n_probe: 16,
-  timeout_ms: 3000
+  timeout_ms: 3000,
 };
 ```
 
@@ -1192,12 +1245,12 @@ const balancedSearch = {
 ```typescript
 // Good: Batch insert
 await client.batchInsert({
-  vectors: largeArrayOfVectors  // Insert 1000 at once
+  vectors: largeArrayOfVectors, // Insert 1000 at once
 });
 
 // Bad: Individual inserts
 for (const vector of largeArrayOfVectors) {
-  await client.insertVector(vector);  // Slow!
+  await client.insertVector(vector); // Slow!
 }
 ```
 
@@ -1206,9 +1259,9 @@ for (const vector of largeArrayOfVectors) {
 ```typescript
 // Reuse client instances
 const client = new VectorDBClient({
-  apiUrl: 'http://localhost:7530',
+  apiUrl: "http://localhost:7530",
   maxConnections: 10,
-  keepAlive: true
+  keepAlive: true,
 });
 
 // Use the same client instance across your application
@@ -1232,9 +1285,9 @@ IVF_N_CLUSTERS=512        # More clusters for better distribution
 ```typescript
 // Configure automatic migration
 const config = {
-  recent_threshold: 7 * 24 * 60 * 60 * 1000,  // 7 days
+  recent_threshold: 7 * 24 * 60 * 60 * 1000, // 7 days
   migration_batch_size: 1000,
-  auto_migrate: true
+  auto_migrate: true,
 };
 
 // Or manually trigger migration during off-peak
@@ -1285,7 +1338,7 @@ function validateVector(vector: number[]): void {
 try {
   await client.insertVector({ id, vector, metadata });
 } catch (error) {
-  if (error.code === 'DUPLICATE_VECTOR') {
+  if (error.code === "DUPLICATE_VECTOR") {
     // Update existing vector instead
     await client.updateVector({ id, vector, metadata });
   }
@@ -1315,10 +1368,12 @@ async function retryOperation<T>(
       return await operation();
     } catch (error) {
       if (i === maxRetries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+      await new Promise((resolve) =>
+        setTimeout(resolve, 1000 * Math.pow(2, i))
+      );
     }
   }
-  throw new Error('Max retries exceeded');
+  throw new Error("Max retries exceeded");
 }
 ```
 
@@ -1339,10 +1394,10 @@ RUST_LOG=vector_db=debug,tower_http=debug
 ```typescript
 // Use the statistics endpoint
 const stats = await client.admin.getStatistics();
-console.log('Vector distribution:', {
+console.log("Vector distribution:", {
   recent: stats.recent_vectors,
   historical: stats.historical_vectors,
-  memoryUsage: stats.memory_usage
+  memoryUsage: stats.memory_usage,
 });
 ```
 
@@ -1353,14 +1408,14 @@ console.log('Vector distribution:', {
 setInterval(async () => {
   try {
     const health = await client.health();
-    if (health.status !== 'healthy') {
-      console.error('Database unhealthy:', health);
+    if (health.status !== "healthy") {
+      console.error("Database unhealthy:", health);
       // Trigger alerts
     }
   } catch (error) {
-    console.error('Health check failed:', error);
+    console.error("Health check failed:", error);
   }
-}, 30000);  // Every 30 seconds
+}, 30000); // Every 30 seconds
 ```
 
 #### 4. Trace Requests
@@ -1372,8 +1427,8 @@ const result = await client.search({
   vector: queryVector,
   k: 10,
   headers: {
-    'X-Request-ID': requestId
-  }
+    "X-Request-ID": requestId,
+  },
 });
 
 // Check server logs for this request ID
@@ -1392,6 +1447,7 @@ const result = await client.search({
 ## Implementation Status
 
 ### Fully Implemented Endpoints
+
 - ✅ `GET /health` - Health check
 - ✅ `POST /vectors` - Insert single vector
 - ✅ `POST /vectors/batch` - Batch insert vectors
@@ -1400,7 +1456,9 @@ const result = await client.search({
 - ✅ `POST /search` - Vector similarity search
 
 ### Partially Implemented Endpoints
+
 These endpoints have placeholder implementations that return default/empty responses:
+
 - ⚠️ `GET /admin/statistics` - Returns zeros (TODO: implement actual statistics)
 - ⚠️ `POST /admin/migrate` - Returns zeros (TODO: implement migration logic)
 - ⚠️ `POST /admin/rebalance` - Returns zeros (TODO: implement rebalancing)
@@ -1423,25 +1481,24 @@ MAX_CONNECTIONS=100
 
 ```typescript
 // Implement exponential backoff
-async function handleRateLimit<T>(
-  operation: () => Promise<T>
-): Promise<T> {
+async function handleRateLimit<T>(operation: () => Promise<T>): Promise<T> {
   const maxRetries = 5;
   let delay = 1000; // Start with 1 second
-  
+
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await operation();
     } catch (error) {
-      if (error.status === 429) { // Rate limited
-        await new Promise(resolve => setTimeout(resolve, delay));
+      if (error.status === 429) {
+        // Rate limited
+        await new Promise((resolve) => setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff
         continue;
       }
       throw error;
     }
   }
-  throw new Error('Rate limit exceeded after retries');
+  throw new Error("Rate limit exceeded after retries");
 }
 ```
 
@@ -1452,16 +1509,16 @@ async function handleRateLimit<T>(
 ```typescript
 // API Key authentication
 const client = new VectorDBClient({
-  apiUrl: 'http://localhost:7530',
-  apiKey: process.env.VECTOR_DB_API_KEY
+  apiUrl: "http://localhost:7530",
+  apiKey: process.env.VECTOR_DB_API_KEY,
 });
 
 // Bearer token in headers
-const response = await fetch('http://localhost:7530/vectors', {
+const response = await fetch("http://localhost:7530/vectors", {
   headers: {
-    'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json'
-  }
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  },
 });
 ```
 
@@ -1475,9 +1532,9 @@ const response = await fetch('http://localhost:7530/vectors', {
 
 ```typescript
 // Example middleware for role-based access
-app.use('/admin/*', requireRole('admin'));
-app.use('/vectors/delete', requireRole('editor'));
-app.use('/search', requireRole('reader'));
+app.use("/admin/*", requireRole("admin"));
+app.use("/vectors/delete", requireRole("editor"));
+app.use("/search", requireRole("reader"));
 ```
 
 ## Troubleshooting Guide
@@ -1485,18 +1542,21 @@ app.use('/search', requireRole('reader'));
 ### Common Issues
 
 1. **Slow Search Performance**
+
    - Check index statistics
    - Increase `hnsw_ef` for recent index
    - Increase `ivf_n_probe` for historical index
    - Consider adding more RAM
 
 2. **High Memory Usage**
+
    - Enable compression
    - Reduce `HNSW_M` parameter
    - Implement pagination for large results
    - Monitor with `admin/statistics`
 
 3. **Failed Migrations**
+
    - Check disk space
    - Verify S5 connectivity
    - Review migration logs
@@ -1522,6 +1582,7 @@ app.use('/search', requireRole('reader'));
 ### v0.1.1 - Chunked Storage Release (2025-01-28)
 
 **Major Features:**
+
 - ✅ **Chunked Storage**: Scalable partitioning with 10K vectors/chunk default
 - ✅ **Lazy Loading**: On-demand chunk loading with LRU cache (150 MB default)
 - ✅ **Encryption by Default**: ChaCha20-Poly1305 at rest (<5% overhead)
@@ -1530,12 +1591,14 @@ app.use('/search', requireRole('reader'));
 - ✅ **Performance**: 6x faster load times (685ms vs ~4000ms)
 
 **API Changes:**
+
 - Added `chunkSize`, `cacheSizeMb`, `encryptAtRest` to `VectorDbConfig`
 - Added `lazyLoad` option to `loadUserVectors()`
 - Updated default S5 timeout to 30 seconds for real S5 operations
 - Changed production port from 7530 to 7533
 
 **Performance (Phase 6 Tested - 100K vectors):**
+
 - Load: 685ms
 - Memory: 64 MB
 - Search (warm): 58ms
@@ -1543,6 +1606,7 @@ app.use('/search', requireRole('reader'));
 - Encryption overhead: <5%
 
 **Documentation:**
+
 - Added [Performance Tuning Guide](./PERFORMANCE_TUNING.md)
 - Updated [Vector DB Integration Guide](./sdk-reference/VECTOR_DB_INTEGRATION.md)
 - Refreshed README with v0.1.1 features
@@ -1550,6 +1614,7 @@ app.use('/search', requireRole('reader'));
 ### v0.1.0 - Initial Production Release (2025-01-15)
 
 **Features:**
+
 - Basic HNSW/IVF hybrid indexing
 - S5 storage integration
 - REST API (port 7530)
@@ -1557,6 +1622,7 @@ app.use('/search', requireRole('reader'));
 - Basic search and insert operations
 
 **Known Limitations:**
+
 - High memory usage (640 MB for 100K vectors)
 - Slow load times (~4 seconds for 100K vectors)
 - No encryption at rest
@@ -1565,6 +1631,7 @@ app.use('/search', requireRole('reader'));
 ### Pre-v0.1.0 - Development Phases
 
 **Phase 1-5: Core Infrastructure**
+
 - HNSW index implementation
 - IVF index implementation
 - Hybrid routing logic
@@ -1572,22 +1639,26 @@ app.use('/search', requireRole('reader'));
 - Basic REST API
 
 **Phase 6: Testing & Optimization**
+
 - 100K vector testing
 - Performance benchmarking
 - Memory profiling
 
 **Phase 7: Documentation**
+
 - API documentation
 - Integration guides
 - Performance tuning guides
 
 **Phase 8: Enhanced S5.js Integration**
+
 - Mock and real S5 modes
 - Configuration management
 - Seed phrase handling
 - Health monitoring
 
 **Phase 9: Node.js Native Bindings**
+
 - napi-rs implementation
 - S5 persistence
 - Native metadata support
@@ -1604,19 +1675,19 @@ app.use('/search', requireRole('reader'));
 ```javascript
 // v0.1.0 - No chunked storage
 const session = await VectorDbSession.create({
-  s5Portal: 'http://localhost:5522',
-  userSeedPhrase: 'seed',
-  sessionId: 'id',
+  s5Portal: "http://localhost:5522",
+  userSeedPhrase: "seed",
+  sessionId: "id",
 });
 
 // v0.1.1 - Add chunked storage config
 const session = await VectorDbSession.create({
-  s5Portal: 'http://localhost:5522',
-  userSeedPhrase: 'seed',
-  sessionId: 'id',
-  chunkSize: 10000,        // NEW: Chunked storage
-  cacheSizeMb: 150,        // NEW: Cache configuration
-  encryptAtRest: true,     // NEW: Encryption (default)
+  s5Portal: "http://localhost:5522",
+  userSeedPhrase: "seed",
+  sessionId: "id",
+  chunkSize: 10000, // NEW: Chunked storage
+  cacheSizeMb: 150, // NEW: Cache configuration
+  encryptAtRest: true, // NEW: Encryption (default)
 });
 
 // Load with lazy loading

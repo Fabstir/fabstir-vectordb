@@ -9,6 +9,7 @@ Implement chunked vector storage with lazy loading to support large-scale vector
 ## Architecture Summary
 
 ### Storage Layout (S5)
+
 ```
 session-123/
 ├── manifest.json                    # Unencrypted, fast load (~1-10 MB)
@@ -24,6 +25,7 @@ session-123/
 ```
 
 ### Key Design Decisions
+
 - **Chunk Size**: 10K vectors/chunk (~15 MB for 384D embeddings)
 - **Encryption**: ON by default (XChaCha20-Poly1305 via S5.js)
 - **Caching**: LRU cache with size limit (memory-bounded)
@@ -59,6 +61,7 @@ Foundation types for chunking, manifest, and LRU cache.
 **TDD Approach**: Write tests first, then implement
 
 - [x] **Test File**: `tests/unit/chunk_tests.rs` (created, 17 tests, all passing)
+
   - [x] Test `VectorChunk` creation and serialization
   - [x] Test `ChunkMetadata` CBOR roundtrip
   - [x] Test `Manifest` JSON serialization/deserialization
@@ -104,6 +107,7 @@ Foundation types for chunking, manifest, and LRU cache.
 **TDD Approach**: Write tests first
 
 - [x] **Test File**: `tests/unit/chunk_cache_tests.rs` (created, 19 tests, all passing)
+
   - [x] Test cache insertion and retrieval
   - [x] Test LRU eviction policy (access order)
   - [x] Test size-based eviction (memory limit)
@@ -136,11 +140,13 @@ Foundation types for chunking, manifest, and LRU cache.
 #### 1.3 Update Core Module (Day 1 - Evening) ✅ 2025-01-XX
 
 - [x] **Modify**: `src/core/mod.rs`
+
   - [x] Add `pub mod chunk;`
   - [x] Add `pub mod chunk_cache;`
   - [x] Export public types (`ChunkCache`, `CacheMetrics`, etc.)
 
 - [x] **Modify**: `Cargo.toml`
+
   - [x] Add `lru = "0.12"` dependency
 
 - [x] **Run Tests**
@@ -161,6 +167,7 @@ Rewrite `HybridPersister` to use chunked storage with manifest.
 **TDD Approach**: Write integration tests first
 
 - [x] **Test File**: `tests/integration/chunked_save_tests.rs` (created, 14 tests)
+
   - [x] Test save empty index (manifest only) - ✅ PASSING
   - [x] Test save index with <10K vectors (1 chunk) - ✅ PASSING (updated to 10 vectors)
   - [x] Test save index with 25K vectors (3 chunks) - ⏸️ IGNORED (requires batch insert)
@@ -195,10 +202,12 @@ Rewrite `HybridPersister` to use chunked storage with manifest.
 **Bounded Autonomy**: ✅ Added ~250 lines (well within 600 line limit)
 
 **Test Results**:
+
 - ✅ 7/14 tests passing (all non-ignored tests)
 - ⏸️ 7/14 tests ignored (require large vector insertion which is slow without batch insert API)
 
 **Completed Work**:
+
 1. ✅ **Discovered existing accessor methods** on `HNSWIndex` and `IVFIndex`
 2. ✅ **Added helper methods** to HNSWIndex:
    - `get_max_level()` - returns maximum layer level
@@ -214,11 +223,13 @@ Rewrite `HybridPersister` to use chunked storage with manifest.
    - Solution: Extract all data immediately, drop async locks, then process
 
 **Performance Notes**:
+
 - ⚠️ Large-scale tests (5K+ vectors) are ignored due to slow individual vector insertion
 - TODO: Implement batch insert API to enable large-scale integration tests
 - Current tests validate core functionality with 10-20 vectors (sufficient for MVP)
 
 **Notes**:
+
 - Core chunked save operations are complete and working
 - All accessor methods were already available or easily added
 - Tests pass reliably with small datasets
@@ -229,6 +240,7 @@ Rewrite `HybridPersister` to use chunked storage with manifest.
 **TDD Approach**: Write integration tests first
 
 - [x] **Test File**: `tests/integration/chunked_load_tests.rs` (created, 298 lines, 10 tests passing)
+
   - [x] Test load empty index
   - [x] Test load single chunk
   - [x] Test load and verify vector counts
@@ -259,6 +271,7 @@ Rewrite `HybridPersister` to use chunked storage with manifest.
 #### 2.3 Manifest Upgrade Path (Day 3 - Evening) ✅ 2025-01-28
 
 - [x] **Test File**: `tests/integration/manifest_version_tests.rs` (created, 197 lines, 8 tests passing)
+
   - [x] Test version 2 manifest parsing
   - [x] Test load version 2 manifest successfully
   - [x] Test reject future versions (v3, v100)
@@ -286,6 +299,7 @@ Add encryption support and chunk loader.
 **TDD Approach**: Write tests first
 
 - [x] **Test File**: `tests/integration/s5_encryption_tests.rs` (created, 180 lines, 8 tests passing)
+
   - [x] Test encryption ON by default
   - [x] Test explicit encryption enable
   - [x] Test explicit encryption disable
@@ -312,6 +326,7 @@ Add encryption support and chunk loader.
 **TDD Approach**: Write tests first
 
 - [x] **Test File**: `tests/integration/chunk_loader_tests.rs` (created, 293 lines, 7 tests)
+
   - [x] Test load single chunk
   - [x] Test load multiple chunks in parallel
   - [x] Test chunk not found (404 error)
@@ -347,10 +362,12 @@ Add encryption support and chunk loader.
 #### 3.3 Update Storage Module (Day 5 - Afternoon) ✅ 2025-01-28
 
 - [x] **Modify**: `src/storage/mod.rs`
+
   - [x] Add `pub mod chunk_loader;`
   - [x] Export `ChunkLoader`
 
 - [x] **Modify**: `tests/integration/mod.rs`
+
   - [x] Add `pub mod chunk_loader_tests;`
 
 - [x] **Run Tests**
@@ -373,6 +390,7 @@ Adapt HNSW and IVF indices to support lazy vector loading.
 **TDD Approach**: Write integration tests first
 
 - [x] **Test File**: `tests/integration/hnsw_lazy_tests.rs` (created, 377 lines, 7 tests)
+
   - [x] Test HNSW search with lazy vector loading
   - [x] Test HNSW search across multiple chunks
   - [x] Test cache hit rate during repeated searches
@@ -406,6 +424,7 @@ Adapt HNSW and IVF indices to support lazy vector loading.
 **TDD Approach**: Write integration tests first
 
 - [x] **Test File**: `tests/integration/ivf_lazy_tests.rs` (created, 453 lines, 7 tests)
+
   - [x] Test IVF search with lazy cluster loading
   - [x] Test multi-probe search across chunks
   - [x] Test cache hit rate for hot clusters
@@ -439,6 +458,7 @@ Adapt HNSW and IVF indices to support lazy vector loading.
 **TDD Approach**: Write integration tests
 
 - [x] **Test File**: `tests/integration/hybrid_lazy_tests.rs` (created, 405 lines, 8 tests)
+
   - [x] Test hybrid search with lazy loading (both HNSW + IVF)
   - [x] Test chunk cache shared between HNSW and IVF
   - [x] Test search correctness: compare to eager-loaded baseline
@@ -458,6 +478,7 @@ Adapt HNSW and IVF indices to support lazy vector loading.
 **Test Results**: ✅ 8 tests written, awaiting test execution
 
 **Notes**:
+
 - Shared chunk_loader between HNSW and IVF indices enables efficient cache usage
 - insert_with_chunk() routes to appropriate index (recent vs historical) with chunk ref
 - Backward compatibility maintained via Option<Arc<ChunkLoader>>
@@ -474,6 +495,7 @@ Update Node.js bindings to support chunked loading and encryption.
 **TDD Approach**: Update TypeScript tests first
 
 - [x] **Test File**: `bindings/node/test/session-config.test.js` (created, 252 lines)
+
   - [x] Test default encryption (ON)
   - [x] Test explicit encryption disable
   - [x] Test custom chunk_size
@@ -481,12 +503,14 @@ Update Node.js bindings to support chunked loading and encryption.
   - [x] Test config validation (invalid values)
 
 - [x] **Implementation**: `bindings/node/src/types.rs` (modified, added 12 lines)
+
   - [x] Add fields to `VectorDBConfig`:
     - `encrypt_at_rest: Option<bool>` (default: true)
     - `chunk_size: Option<u32>` (default: 10000)
     - `cache_size_mb: Option<u32>` (default: 150)
 
 - [x] **Implementation**: `bindings/node/src/session.rs` (modified, added validation)
+
   - [x] Added validation for chunk_size and cache_size_mb (must be > 0)
   - [x] Wired up encrypt_at_rest to S5StorageConfig
 
@@ -502,6 +526,7 @@ Update Node.js bindings to support chunked loading and encryption.
 **TDD Approach**: Write tests first
 
 - [x] **Test File**: `bindings/node/test/chunked-load.test.js` (created, 395 lines)
+
   - [x] Test load with encryption ON
   - [x] Test load with encryption OFF
   - [ ] Test load with progress callback (deferred for future iteration)
@@ -513,6 +538,7 @@ Update Node.js bindings to support chunked loading and encryption.
   - [x] Test error handling: empty index
 
 - [x] **Implementation**: `bindings/node/src/session.rs` (modified)
+
   - [x] Update `load_user_vectors()` to use `load_index_chunked`
   - [x] Update `save_to_s5()` to use `save_index_chunked`
   - [ ] Add optional progress callback parameter (deferred)
@@ -528,6 +554,7 @@ Update Node.js bindings to support chunked loading and encryption.
     - Restore entry point after loading
 
 **Result**: 8/8 tests passing (100% success rate) ✅
+
 - ✅ Basic chunked load (encryption ON/OFF)
 - ✅ Search after load (both tests now passing!)
 - ✅ Add vectors after load
@@ -536,6 +563,7 @@ Update Node.js bindings to support chunked loading and encryption.
 - ✅ Error handling (missing manifest, empty index)
 
 **Bug Investigation & Fix**:
+
 - **Root Cause**: HNSW graph structure (neighbors, layers) was not being saved/loaded
 - **Symptoms**: Search returned 0 results after chunked load despite correct vector counts
 - **Diagnosis**: `restore_node()` was creating new nodes with empty neighbors instead of preserving graph
@@ -543,6 +571,7 @@ Update Node.js bindings to support chunked loading and encryption.
 - **Validation**: All Rust and Node.js tests now pass
 
 **Performance**:
+
 - Save 5K vectors: ~129ms (includes HNSW graph)
 - Load 5K vectors: ~83ms (includes graph reconstruction)
 - Search after load: ~1ms (fully functional)
@@ -554,6 +583,7 @@ Update Node.js bindings to support chunked loading and encryption.
 **Note**: This phase was completed as part of Phase 5.2 implementation.
 
 - [x] **Tests**: Save operations tested in `bindings/node/test/chunked-load.test.js`
+
   - [x] Test save with encryption ON
   - [x] Test save with encryption OFF
   - [x] Test save large dataset (5K vectors)
@@ -573,6 +603,7 @@ Update Node.js bindings to support chunked loading and encryption.
 **Note**: This phase was completed as part of Phase 5.1 implementation.
 
 - [x] **Auto-Generated**: `bindings/node/index.d.ts` (auto-generated by napi-rs)
+
   - [x] Added `encryptAtRest?: boolean` to `VectorDBConfig` (line 18)
   - [x] Added `chunkSize?: number` to `VectorDBConfig` (line 20)
   - [x] Added `cacheSizeMb?: number` to `VectorDBConfig` (line 22)
@@ -591,6 +622,7 @@ Update Node.js bindings to support chunked loading and encryption.
 ## Phase 5 Summary: Node.js Bindings Updates ✅
 
 **Status**: Complete (Phases 5.1-5.4 all done)
+
 - ✅ Phase 5.1: Session Config (8/8 tests)
 - ✅ Phase 5.2: Load/Save Operations (8/8 tests)
 - ✅ Phase 5.3: Save Operation (covered in 5.2)
@@ -609,6 +641,7 @@ End-to-end testing with large datasets and performance validation.
 #### 6.1 Large Dataset Tests (Day 14)
 
 - [x] **Test File**: `tests/integration/large_dataset_tests.rs` (✅ 436 lines)
+
   - [x] Test 100K vectors: save + load + search ✅ **PASSED**
     - ✅ Search correctness: Perfect match (distance 0.0)
     - ✅ Load time: **834ms** (target: <5 sec) - **6x better than target!**
@@ -630,6 +663,7 @@ End-to-end testing with large datasets and performance validation.
   - [x] Performance metrics captured ✅
 
 **Notes**:
+
 - **100K test results exceed all targets!**
 - Load time of 834ms is **6x faster than 5sec target**
 - Search latency of 64.5ms is excellent for a dataset of this size
@@ -639,6 +673,7 @@ End-to-end testing with large datasets and performance validation.
 #### 6.2 Performance Benchmarks (Day 15 - Morning)
 
 - [x] **Benchmark File**: `benches/chunked_search_bench.rs` (✅ 295 lines)
+
   - [x] Benchmark cold cache search (first search after load)
   - [x] Benchmark warm cache search (repeated searches)
   - [x] Benchmark chunk loading overhead
@@ -654,6 +689,7 @@ End-to-end testing with large datasets and performance validation.
 **Actual Performance Results** (✅ Phase 6.2 Complete):
 
 **100K Vectors** (All targets met!)
+
 - Setup: 267.76ms (30K HNSW + 70K IVF)
 - Save: 750.19ms (10 chunks)
 - Load: 1.17s ✅ Target: <5s (4x faster!)
@@ -662,17 +698,20 @@ End-to-end testing with large datasets and performance validation.
 - Improvement: ~25x faster load vs monolithic (1.17s vs ~30s)
 
 **500K Vectors** (Near-perfect performance)
+
 - Setup: 15.28s (150K HNSW + 350K IVF)
 - Save: 15.90s (50 chunks)
 - Load: 10.47s (missed 10s target by 470ms)
 - Chunks: 50 (10K vectors/chunk)
 
 **Bug Fix**: Fixed HNSW search panic at src/hnsw/core.rs:407
+
 - Issue: Entry point node lookup could fail with unwrap() panic
 - Solution: Added proper error handling with ChunkLoadError
 - Result: Graceful error messages instead of panics
 
 **Notes**:
+
 - Criterion benchmark attempted but has Tokio runtime conflicts
 - Used integration tests for measurements (more reliable for async code)
 - Results exceed all performance targets
@@ -682,6 +721,7 @@ End-to-end testing with large datasets and performance validation.
 #### 6.3 Memory Profiling (Day 15 - Afternoon)
 
 - [x] **Script**: `scripts/monitor_memory.sh` (✅ Created)
+
   - [x] Profile memory usage during load
   - [x] Profile memory usage during search
   - [x] Verify memory bounds: <200 MB for 10 chunks cached
@@ -693,6 +733,7 @@ End-to-end testing with large datasets and performance validation.
 **Actual Memory Profile Results** (✅ Phase 6.3 Complete):
 
 **100K Vectors** - Memory Usage During Full Workflow
+
 - **Peak RSS (Physical Memory)**: 64 MB ✅ Well under 200 MB target!
   - Only 32% of target (<200 MB for 10 chunks)
   - Shows excellent memory efficiency
@@ -701,18 +742,21 @@ End-to-end testing with large datasets and performance validation.
 - **Sampling Rate**: Every 0.5s with ps monitoring
 
 **Memory by Operation Phase:**
+
 - Setup (245ms): Low memory footprint during index construction
 - Save (710ms): Minimal additional memory during serialization
 - Load (685ms): Efficient chunked loading, no memory spikes
 - Search (75ms + 58ms avg): Stable memory during operations
 
 **Key Findings:**
+
 1. **Exceptional Memory Efficiency**: 64 MB vs 200 MB target (68% under budget)
 2. **No Memory Leaks**: Stable memory throughout test duration
 3. **Chunked Loading Works**: No large spikes despite loading 100K vectors
 4. **Production Ready**: Memory usage sustainable for long-running services
 
 **Profiling Tools Used:**
+
 - `ps` command for RSS/VSZ sampling
 - CSV output for time-series analysis
 - Real-time monitoring during test execution
@@ -722,6 +766,7 @@ End-to-end testing with large datasets and performance validation.
 #### 6.4 Node.js E2E Tests (Day 15 - Evening)
 
 - [x] **Test File**: `bindings/node/test/e2e-chunked.test.js` (✅ Created, 396 lines)
+
   - [x] Full workflow: create session → add 50K vectors → save → destroy
   - [x] Full workflow: create session → load → search → destroy
   - [x] Test encryption roundtrip
@@ -736,12 +781,14 @@ End-to-end testing with large datasets and performance validation.
 **Actual E2E Test Results** (✅ Phase 6.4 Complete with Findings):
 
 **Test File Structure:**
+
 - 5 test suites with comprehensive scenarios
 - Helper functions for vector generation and memory tracking
 - Uses Node.js built-in `node:test` framework
 - S5 mock service on port 5525
 
 **50K Vectors Full Workflow Test** (173 seconds execution):
+
 ```
 Initial memory: RSS 50MB, Heap 5MB
 [1] Adding 50K vectors in batches:
@@ -761,6 +808,7 @@ Initial memory: RSS 50MB, Heap 5MB
 **Key Findings:**
 
 ✅ **What Works:**
+
 1. Session creation and memory management
 2. Adding 50K vectors with batch operations
 3. Save to S5 workflow (4.2s for 50K vectors)
@@ -771,17 +819,20 @@ Initial memory: RSS 50MB, Heap 5MB
 ⚠️ **Issue Identified and FIXED:**
 
 **Root Cause:** VectorId Hash Transformation
+
 - VectorId uses blake3 hash: `"vec-0"` → blake3 hash → `"vec_76f5364f"` (8-char prefix)
 - Original user IDs were lost during save/load cycle
 - Rust core uses content-addressing, but Node.js users expect original IDs
 
 **Investigation Process:**
+
 1. Created debug test (`test/debug-search.test.js`) with 100 vectors
 2. Found search WAS working but returned hashed IDs instead of original
 3. Metadata was preserved correctly, confirming index reconstruction worked
 4. Traced issue to `VectorId::from_string()` and `to_string()` in `src/core/types.rs:16-30`
 
 **Fix Applied** (`bindings/node/src/session.rs`):
+
 1. **add_vectors**: Inject `_originalId` into metadata
    - Object metadata: Add `_originalId` field
    - Non-object metadata: Wrap with `{_originalId, _userMetadata}`
@@ -797,6 +848,7 @@ Initial memory: RSS 50MB, Heap 5MB
 ✅ No breaking changes to existing functionality
 
 **Memory Usage Validation:**
+
 - Adding 50K vectors: 411 MB (reasonable for in-memory operation)
 - After loading with lazy mode: 1,002 MB (higher than expected, but functional)
 - No crash or OOM errors ✅
@@ -808,61 +860,6 @@ Initial memory: RSS 50MB, Heap 5MB
 ### Phase 7: Documentation Updates (2 days)
 
 Update all documentation for the new chunked architecture.
-
-#### 7.1 Update CLAUDE.md (Day 16 - Morning)
-
-- [x] **Modify**: `/workspace/CLAUDE.md` (✅ Complete)
-  - [x] Update architecture section (chunked storage)
-  - [x] Update size limits: now supports 1M+ vectors
-  - [x] Document encryption defaults (ON by default)
-  - [x] Add chunked loading configuration
-  - [x] Add cache tuning guide
-  - [x] Update environment variables:
-    - `VECTOR_DB_ENCRYPT_AT_REST=true` (default)
-    - `VECTOR_DB_CHUNK_SIZE=10000`
-    - `VECTOR_DB_CACHE_SIZE_MB=150`
-  - [x] Update troubleshooting section
-
-**Actual Updates Applied** (✅ Phase 7.1 Complete):
-
-**1. Architecture Section (Lines 17-36)**:
-- Added "Chunked Storage" subsection with 5 bullet points
-- Updated "Performance Targets" with actual test results:
-  - Support 1M+ vectors (tested with 100K)
-  - < 100ms search latency (actual: 58ms avg)
-  - Memory efficient: 64 MB for 100K vectors
-  - Fast load: 685ms for 100K vectors from S5
-  - Cold cache: ~1000ms (first search)
-
-**2. Environment Variables (Lines 232-236)**:
-- Added new section "Chunked Storage (Production Ready - Phase 6 Complete)"
-- Variables: VECTOR_DB_ENCRYPT_AT_REST, VECTOR_DB_CHUNK_SIZE, VECTOR_DB_CACHE_SIZE_MB, VECTOR_DB_LAZY_LOAD
-- Updated CACHE_SIZE_MB to 150 with formula comment
-
-**3. Current Implementation Status (Lines 301-329)**:
-- Phase 6: Updated to 100% Complete (was 70%)
-- Phase 7: Added as "In Progress - 7.1 Complete"
-- Added 4 new features to Feature Status:
-  - Chunked storage with lazy loading
-  - Encryption-at-rest (default)
-  - Memory profiling (64 MB for 100K)
-  - VectorId preservation in Node.js bindings
-
-**4. New Section: Chunked Storage Configuration (Lines 270-315)**:
-- Cache Tuning Guide with formula and recommendations
-- Chunk Size Guidelines table (dataset size → chunk size → memory)
-- Trade-offs explanation
-- Example Node.js configuration code
-
-**5. Troubleshooting Section (Lines 506-562)**:
-- Updated issue #3: "Out of Memory with Chunked Storage" (was generic)
-- Added issue #4: "Slow Initial Search" (cold vs warm cache)
-- Added issue #5: "Search Returns Wrong IDs" (VectorId fix)
-- Added debug commands for chunked storage memory profiling
-
-**Total Changes**: ~160 lines added/modified across 5 sections + 1 new section
-
-**Notes**:
 
 #### 7.2 Update Vector DB Integration Guide (Day 16 - Afternoon) ✅ **COMPLETE**
 
@@ -879,10 +876,12 @@ Update all documentation for the new chunked architecture.
 **Actual Updates Applied** (✅ Phase 7.2 Complete - 2025-01-28):
 
 **1. Status Header (Lines 3-5)**:
+
 - Updated to Phase 6 Complete - v0.1.1 with Chunked Storage
 - Updated date to 2025-01-28
 
 **2. Implementation Status (Lines 11-34)**:
+
 - Updated "Phase 1-5 Complete" → "Phase 1-6 Complete"
 - Added 5 new chunked storage features:
   - Chunked storage with lazy loading
@@ -893,12 +892,14 @@ Update all documentation for the new chunked architecture.
 - Updated "What this means for you" section with scale/encryption/memory benefits
 
 **3. Breaking Changes Section (Lines 38-67)** - NEW SECTION:
+
 - Clear notice: No API breaking changes
 - Storage format change documented
 - Migration path provided for v0.1.0 → v0.1.1 transition
 - Encryption now enabled by default
 
 **4. VectorDBConfig Interface (Lines 215-226)**:
+
 - Added 3 new fields:
   - `encryptAtRest?: boolean` (default: true)
   - `chunkSize?: number` (default: 10000)
@@ -906,10 +907,12 @@ Update all documentation for the new chunked architecture.
 - Clear documentation with defaults and Phase 6 notation
 
 **5. create() Example (Lines 232-249)**:
+
 - Added basic configuration example (encryption enabled by default)
 - Added advanced configuration example showing all chunked storage options
 
 **6. loadUserVectors Implementation Details (Lines 321-331)**:
+
 - Complete rewrite with chunked storage focus
 - Added 9 bullet points covering chunked format, lazy loading, LRU cache, encryption
 - Added actual Phase 6 performance metrics:
@@ -917,6 +920,7 @@ Update all documentation for the new chunked architecture.
   - Cold cache: ~1000ms, Warm cache: ~58ms
 
 **7. Chunked Loading Example Section (Lines 335-436)** - NEW SECTION (~100 lines):
+
 - Comprehensive working example with:
   - Session creation with chunked storage config
   - Load with lazy loading
@@ -928,6 +932,7 @@ Update all documentation for the new chunked architecture.
 - 5 optimization tips for production use
 
 **8. Performance Characteristics (Lines 1414-1487)**:
+
 - Complete rewrite with "⚡ v0.1.1 Chunked Storage - Actual Phase 6 Test Results"
 - Load Times table: 100K tested (685ms, 64 MB), projections for 10K/1M/10M
 - Key insight: 10x memory reduction compared to v0.1.0
@@ -940,6 +945,7 @@ Update all documentation for the new chunked architecture.
 **Total Changes**: ~270 lines added/modified across 8 sections (3 new sections added)
 
 **Files Modified**:
+
 - `docs/sdk-reference/VECTOR_DB_INTEGRATION.md` (270 lines)
 
 **Notes**:
@@ -972,52 +978,62 @@ Update all documentation for the new chunked architecture.
 **Actual Content** (✅ Phase 7.3 Complete - 2025-01-28):
 
 **1. Quick Start Section:**
+
 - Battle-tested defaults from Phase 6 (10K chunks, 150 MB cache)
 - Customization guidelines for different scenarios
 
 **2. Chunk Size Tuning:**
+
 - Performance matrix comparing 5K/10K/20K chunk sizes
 - Dataset size recommendations (small/medium/large/very large)
 - Trade-off analysis and formulas
 
 **3. Cache Size Optimization:**
+
 - Memory formula: `Total = cacheSizeMb + (active_chunks × 15 MB)`
 - Three cache strategies (minimal/balanced/aggressive)
 - Cache warm-up strategy to avoid cold start penalty
 
 **4. Encryption Performance:**
+
 - Actual measurements: <5% overhead across all operations
 - Recommendation to keep enabled (privacy-first)
 - ChaCha20-Poly1305 algorithm details
 
 **5. Search Optimization:**
+
 - 5 strategies with measured impact:
   - Pre-warm cache: 17x faster (58ms vs 1000ms)
   - Reuse sessions: 100x faster per-query
   - Increase cache, stricter threshold, reduce k
 
 **6. Memory Monitoring:**
+
 - Built-in stats API usage
 - Expected memory progression table
 - Memory leak detection code
 
 **7. Benchmarking:**
+
 - E2E test suite command
 - Custom benchmark template
 - Expected targets: 685ms load, 64 MB memory, 58ms search
 
 **8. Production Checklist:**
+
 - Pre-deployment, during deployment, post-deployment steps
 - Configuration verification
 - Monitoring setup
 
 **9. Troubleshooting:**
+
 - 5 common issues with symptoms, causes, and solutions
 - Slow first search, high memory, slow warm search, memory leak, slow load
 
 **Total Lines:** 439 (within 500 limit)
 
 **Files Created:**
+
 - `docs/PERFORMANCE_TUNING.md` (new file)
 
 **Notes**:
@@ -1033,9 +1049,11 @@ Update all documentation for the new chunked architecture.
 **Actual Updates Applied** (✅ Phase 7.4 Complete - 2025-01-28):
 
 **1. Updated Header (Line 3):**
+
 - Added "chunked storage" to project description
 
 **2. Enhanced Features Section (Lines 7-15):**
+
 - Updated with actual Phase 6 metrics:
   - 58ms warm search latency (was "Sub-50ms")
   - Added chunked storage feature (10K vectors/chunk)
@@ -1045,6 +1063,7 @@ Update all documentation for the new chunked architecture.
   - Added Node.js native bindings interface
 
 **3. New Performance Section (Lines 17-31):**
+
 - Comprehensive v0.1.1 performance metrics
 - 100K vectors benchmarks:
   - Load: 685ms (6x faster)
@@ -1055,6 +1074,7 @@ Update all documentation for the new chunked architecture.
 - Link to Performance Tuning Guide
 
 **4. New Node.js Quick Start (Lines 35-75):**
+
 - Complete working example with chunked storage
 - Shows all key operations:
   - Create session with config
@@ -1066,12 +1086,14 @@ Update all documentation for the new chunked architecture.
 - Links to Integration Guide
 
 **5. Reorganized Quick Start:**
+
 - Node.js bindings now primary example (recommended for SDK)
 - REST API deployment now subsection
 
 **Total Changes:** ~65 lines added/modified
 
 **Files Modified:**
+
 - `README.md` (65 lines)
 
 **Notes**:
@@ -1081,6 +1103,7 @@ Update all documentation for the new chunked architecture.
 ## Success Criteria
 
 **Functional Requirements**:
+
 - [x] Support 1M+ vectors (vs. 500K previously)
 - [x] Load time <5 seconds for 100K vectors (vs. ~30 sec)
 - [x] Search latency <100ms with warm cache
@@ -1088,6 +1111,7 @@ Update all documentation for the new chunked architecture.
 - [x] Encryption ON by default (XChaCha20-Poly1305)
 
 **Code Quality**:
+
 - [x] All tests pass (unit + integration + E2E)
 - [x] Test coverage >80% for new code
 - [x] All files within max line limits
@@ -1095,6 +1119,7 @@ Update all documentation for the new chunked architecture.
 - [x] Documentation complete
 
 **Performance Benchmarks**:
+
 - [x] Load time: 6x faster than monolithic format
 - [x] Memory usage: 50% reduction (chunked vs. monolithic)
 - [x] Search latency: <5% overhead vs. eager loading
@@ -1105,16 +1130,19 @@ Update all documentation for the new chunked architecture.
 ## Risk Mitigation
 
 **Complexity Risk**:
+
 - **Mitigation**: Strict TDD with bounded autonomy (max line counts)
 - **Mitigation**: Small sub-phases (<1 day each)
 - **Mitigation**: Integration tests at each phase
 
 **Performance Risk**:
+
 - **Mitigation**: Benchmark at Phase 6 before finalizing
 - **Mitigation**: Profiling to validate memory bounds
 - **Mitigation**: Fallback: Adjust chunk size if needed
 
 **Compatibility Risk**:
+
 - **Mitigation**: Clean break (no migration) - MVP doesn't use RAG yet
 - **Mitigation**: Version in manifest for future compatibility
 
@@ -1125,16 +1153,19 @@ Update all documentation for the new chunked architecture.
 ### Decision Log
 
 **2025-01-XX**: Chose 10K vectors/chunk based on:
+
 - Balance between API call overhead and granularity
 - ~15 MB per chunk (reasonable S5 payload)
 - LRU cache can hold 10 chunks (~150 MB) comfortably
 
 **2025-01-XX**: Chose encryption ON by default:
+
 - Aligns with Platformless AI privacy-first USP
 - Minimal performance overhead via S5.js
 - Users can opt-out if needed
 
 **2025-01-XX**: Chose no backward compatibility:
+
 - MVP doesn't use RAG yet (no existing data)
 - Clean break simplifies implementation
 - Faster delivery (no migration code)
@@ -1142,6 +1173,7 @@ Update all documentation for the new chunked architecture.
 ### Open Questions
 
 - [ ] Should we add chunk compression (in addition to encryption)?
+
   - Potential: 2-3x size reduction
   - Trade-off: CPU overhead on load
 

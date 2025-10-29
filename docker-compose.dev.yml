@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # Development container for Vector DB
@@ -6,7 +6,7 @@ services:
     image: fabstir-vectordb-fabstir-ai-vector-db
     container_name: fabstir-vectordb-dev
     volumes:
-      # Mount YOUR project directory to /workspace where Claude Code expects it
+      # Mount YOUR project directory to /workspace
       - .:/workspace:cached
       # Keep cargo cache for faster builds
       - cargo-cache:/home/developer/.cargo
@@ -17,7 +17,7 @@ services:
       - RUST_LOG=info
     stdin_open: true
     tty: true
-    command: tail -f /dev/null  # Keep container running for development
+    command: tail -f /dev/null # Keep container running for development
 
   # Production container
   vector-db-prod:

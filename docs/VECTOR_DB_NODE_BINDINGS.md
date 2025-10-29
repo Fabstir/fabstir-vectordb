@@ -172,10 +172,7 @@ fn main() {
     "name": "vector-db-native",
     "triples": {
       "defaults": true,
-      "additional": [
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu"
-      ]
+      "additional": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
     }
   },
   "scripts": {
@@ -202,11 +199,7 @@ fn main() {
     "@napi-rs/cli": "^2.18.0",
     "prettier": "^3.2.0"
   },
-  "files": [
-    "index.js",
-    "index.d.ts",
-    "*.node"
-  ]
+  "files": ["index.js", "index.d.ts", "*.node"]
 }
 ```
 
@@ -671,65 +664,65 @@ pub fn vec_f32_to_js_array(vec: Vec<f32>) -> Vec<f64> {
 
 ```typescript
 export class VectorDBSession {
-  static create(config: VectorDBConfig): Promise<VectorDBSession>
-  loadUserVectors(cid: string, options?: LoadOptions): Promise<void>
+  static create(config: VectorDBConfig): Promise<VectorDBSession>;
+  loadUserVectors(cid: string, options?: LoadOptions): Promise<void>;
   search(
     queryVector: number[],
     k: number,
     options?: SearchOptions
-  ): Promise<SearchResult[]>
-  addVectors(vectors: VectorInput[]): Promise<void>
-  saveToS5(): Promise<string>
-  getStats(): SessionStats
-  destroy(): Promise<void>
+  ): Promise<SearchResult[]>;
+  addVectors(vectors: VectorInput[]): Promise<void>;
+  saveToS5(): Promise<string>;
+  getStats(): SessionStats;
+  destroy(): Promise<void>;
 }
 
 export interface VectorDBConfig {
-  s5Portal: string
-  userSeedPhrase: string
-  sessionId: string
-  memoryBudgetMB?: number
-  debug?: boolean
+  s5Portal: string;
+  userSeedPhrase: string;
+  sessionId: string;
+  memoryBudgetMB?: number;
+  debug?: boolean;
 }
 
 export interface LoadOptions {
-  lazyLoad?: boolean
-  memoryBudgetMB?: number
+  lazyLoad?: boolean;
+  memoryBudgetMB?: number;
 }
 
 export interface SearchOptions {
-  threshold?: number
-  includeVectors?: boolean
+  threshold?: number;
+  includeVectors?: boolean;
 }
 
 export interface VectorInput {
-  id: string
-  vector: number[]
-  metadata: any
+  id: string;
+  vector: number[];
+  metadata: any;
 }
 
 export interface SearchResult {
-  id: string
-  score: number
-  metadata: any
-  vector?: number[]
+  id: string;
+  score: number;
+  metadata: any;
+  vector?: number[];
 }
 
 export interface SessionStats {
-  vectorCount: number
-  memoryUsageMB: number
-  indexType: string
-  hnswVectorCount?: number
-  ivfVectorCount?: number
+  vectorCount: number;
+  memoryUsageMB: number;
+  indexType: string;
+  hnswVectorCount?: number;
+  ivfVectorCount?: number;
 }
 
 export class VectorDBError extends Error {
-  code: string
-  message: string
+  code: string;
+  message: string;
 }
 
-export function getVersion(): string
-export function getPlatformInfo(): { platform: string; arch: string }
+export function getVersion(): string;
+export function getPlatformInfo(): { platform: string; arch: string };
 ```
 
 ---
@@ -770,65 +763,68 @@ target/
 Create `bindings/node/test/session.test.js`:
 
 ```javascript
-const { test } = require('node:test');
-const assert = require('node:assert');
-const { VectorDBSession } = require('..');
+const { test } = require("node:test");
+const assert = require("node:assert");
+const { VectorDBSession } = require("..");
 
-test('VectorDBSession.create', async (t) => {
+test("VectorDBSession.create", async (t) => {
   const session = await VectorDBSession.create({
-    s5Portal: 'http://localhost:5524',
-    userSeedPhrase: 'test seed phrase',
-    sessionId: 'test-session-1',
+    s5Portal: "http://localhost:5524",
+    userSeedPhrase: "test seed phrase",
+    sessionId: "test-session-1",
     memoryBudgetMB: 256,
   });
 
-  assert.ok(session, 'Session should be created');
+  assert.ok(session, "Session should be created");
 
   const stats = session.getStats();
-  assert.strictEqual(stats.vectorCount, 0, 'Initial vector count should be 0');
+  assert.strictEqual(stats.vectorCount, 0, "Initial vector count should be 0");
 
   await session.destroy();
 });
 
-test('VectorDBSession.addVectors and search', async (t) => {
+test("VectorDBSession.addVectors and search", async (t) => {
   const session = await VectorDBSession.create({
-    s5Portal: 'http://localhost:5524',
-    userSeedPhrase: 'test seed phrase',
-    sessionId: 'test-session-2',
+    s5Portal: "http://localhost:5524",
+    userSeedPhrase: "test seed phrase",
+    sessionId: "test-session-2",
   });
 
   // Add test vectors
   await session.addVectors([
     {
-      id: 'vec1',
+      id: "vec1",
       vector: new Array(384).fill(0.1),
-      metadata: { text: 'Document 1' },
+      metadata: { text: "Document 1" },
     },
     {
-      id: 'vec2',
+      id: "vec2",
       vector: new Array(384).fill(0.2),
-      metadata: { text: 'Document 2' },
+      metadata: { text: "Document 2" },
     },
   ]);
 
   const stats = session.getStats();
-  assert.strictEqual(stats.vectorCount, 2, 'Should have 2 vectors');
+  assert.strictEqual(stats.vectorCount, 2, "Should have 2 vectors");
 
   // Search
   const queryVector = new Array(384).fill(0.15);
   const results = await session.search(queryVector, 2);
 
-  assert.ok(results.length > 0, 'Should return results');
-  assert.ok(results[0].score >= 0 && results[0].score <= 1, 'Score should be normalized');
+  assert.ok(results.length > 0, "Should return results");
+  assert.ok(
+    results[0].score >= 0 && results[0].score <= 1,
+    "Score should be normalized"
+  );
 
   await session.destroy();
 });
 
-test('VectorDBSession.destroy cleans up', async (t) => {
+test("VectorDBSession.destroy cleans up", async (t) => {
   const session = await VectorDBSession.create({
-    s5Portal: 'http://localhost:5524',
-    userSeedPhrase: 'test seed phrase',
-    sessionId: 'test-session-3',
+    s5Portal: "http://localhost:5524",
+    userSeedPhrase: "test seed phrase",
+    sessionId: "test-session-3",
   });
 
   await session.destroy();
@@ -846,47 +842,47 @@ test('VectorDBSession.destroy cleans up', async (t) => {
 Create `bindings/node/test/s5-integration.test.js`:
 
 ```javascript
-const { test } = require('node:test');
-const assert = require('node:assert');
-const { VectorDBSession } = require('..');
+const { test } = require("node:test");
+const assert = require("node:assert");
+const { VectorDBSession } = require("..");
 
 // Skip if S5 not available
-const S5_AVAILABLE = process.env.TEST_WITH_S5 === 'true';
+const S5_AVAILABLE = process.env.TEST_WITH_S5 === "true";
 
-test('S5 load and save', { skip: !S5_AVAILABLE }, async (t) => {
+test("S5 load and save", { skip: !S5_AVAILABLE }, async (t) => {
   const session = await VectorDBSession.create({
-    s5Portal: process.env.S5_PORTAL_URL || 'http://localhost:5524',
-    userSeedPhrase: process.env.TEST_SEED_PHRASE || 'test seed',
-    sessionId: 'test-s5-1',
+    s5Portal: process.env.S5_PORTAL_URL || "http://localhost:5524",
+    userSeedPhrase: process.env.TEST_SEED_PHRASE || "test seed",
+    sessionId: "test-s5-1",
   });
 
   // Add vectors
   await session.addVectors([
     {
-      id: 'test1',
+      id: "test1",
       vector: new Array(384).fill(0.5),
-      metadata: { source: 's5-test' },
+      metadata: { source: "s5-test" },
     },
   ]);
 
   // Save to S5
   const cid = await session.saveToS5();
-  assert.ok(cid, 'Should return CID');
-  assert.ok(cid.startsWith('u'), 'CID should start with "u"');
+  assert.ok(cid, "Should return CID");
+  assert.ok(cid.startsWith("u"), 'CID should start with "u"');
 
   await session.destroy();
 
   // Load in new session
   const session2 = await VectorDBSession.create({
-    s5Portal: process.env.S5_PORTAL_URL || 'http://localhost:5524',
-    userSeedPhrase: process.env.TEST_SEED_PHRASE || 'test seed',
-    sessionId: 'test-s5-2',
+    s5Portal: process.env.S5_PORTAL_URL || "http://localhost:5524",
+    userSeedPhrase: process.env.TEST_SEED_PHRASE || "test seed",
+    sessionId: "test-s5-2",
   });
 
   await session2.loadUserVectors(cid);
 
   const stats = session2.getStats();
-  assert.strictEqual(stats.vectorCount, 1, 'Should load 1 vector from S5');
+  assert.strictEqual(stats.vectorCount, 1, "Should load 1 vector from S5");
 
   await session2.destroy();
 });
@@ -926,7 +922,7 @@ npm install git+https://github.com/yourorg/fabstir-vectordb.git#main:bindings/no
 
 ### 7.1 Create bindings/node/README.md
 
-```markdown
+````markdown
 # @fabstir/vector-db-native
 
 Native Node.js bindings for Fabstir Vector Database.
@@ -936,6 +932,7 @@ Native Node.js bindings for Fabstir Vector Database.
 ```bash
 npm install /path/to/fabstir-vector-db-native-0.1.0.tgz
 ```
+````
 
 ## Quick Start
 
@@ -980,6 +977,7 @@ See `index.d.ts` for full TypeScript definitions.
 ## License
 
 MIT
+
 ```
 
 ---
@@ -1082,6 +1080,7 @@ MIT
 
 **Test Results:**
 ```
+
 running 8 tests
 test hybrid::persistence::tests::test_hybrid_metadata_cbor_roundtrip ... ok
 test hybrid::persistence::tests::test_hybrid_persister_missing_metadata ... ok
@@ -1093,6 +1092,7 @@ test hybrid::persistence::tests::test_hybrid_persister_preserves_search_results 
 test hybrid::persistence::tests::test_hybrid_persister_preserves_vector_count ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured
+
 ```
 
 ---
@@ -1195,14 +1195,22 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured
 
 **Test Results:**
 ```
+
 # tests 28
+
 # suites 10
+
 # pass 28
+
 # fail 0
+
 # cancelled 0
+
 # skipped 0
+
 # duration_ms 6060.917297
-```
+
+````
 
 **S5 HTTP Service:** Tests use a production-ready HTTP service (`bindings/node/services/s5-http-service.js`) that wraps Enhanced S5.js, enabling Rust to interact with S5 storage via HTTP calls.
 
@@ -1235,10 +1243,12 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
   if !index_guard.is_initialized() && !vectors.is_empty() {
       index_guard.initialize(training_data).await?;
   }
-  ```
+````
+
 - **Impact:** Vectors now persist across multiple `addVectors()` calls
 
 **Bug 4: Memory Usage Calculation**
+
 - **File:** `src/hybrid/core.rs` (lines 543-570)
 - **Issue:** `get_stats()` always returned `memoryUsageMb: 0`
 - **Root Cause:** Stub implementation with TODOs - `recent_index_memory: 0, historical_index_memory: 0`
@@ -1255,6 +1265,7 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
 - **Impact:** Fixed statistics test, memory usage now accurately reported
 
 **Additional Improvements:**
+
 - Added `is_initialized()` method to HybridIndex (src/hybrid/core.rs:237-239)
 - Updated test configuration to use `127.0.0.1:5522` instead of `localhost:5522` to avoid Docker hostname replacement
 - Created S5 HTTP service test helpers for auto-start/stop in test suites
@@ -1266,6 +1277,7 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
 **Goal:** Create production-ready tarball for SDK developer
 
 #### 6.1: Production Build ✅ COMPLETE
+
 - [x] Run `cargo build --release` in workspace root
 - [x] Run `npm run build` in bindings/node
 - [x] Verify binary size is reasonable (8.2 MB - optimized)
@@ -1273,18 +1285,21 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
 - [x] Run final test suite to confirm release build works (25/25 passing)
 
 **Build Results:**
+
 - Binary: `vector-db-native.linux-x64-gnu.node` (8.2 MB)
 - Build time: ~12 seconds (release mode with LTO)
 - All tests passing with release build
 - TypeScript definitions verified and current
 
 #### 6.2: Create Distribution Package ✅ COMPLETE
+
 - [x] Run `npm pack` to create tarball
-- [x] Verify tarball contents (index.js, index.d.ts, *.node, package.json, README.md)
+- [x] Verify tarball contents (index.js, index.d.ts, \*.node, package.json, README.md)
 - [x] Test install from tarball in clean directory
 - [x] Verify installed package works
 
 **Package Details:**
+
 - Filename: `fabstir-vector-db-native-0.1.0.tgz`
 - Package size (compressed): 3.3 MB
 - Unpacked size: 8.6 MB
@@ -1296,6 +1311,7 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
   - `vector-db-native.linux-x64-gnu.node` (8.5 MB) - Native binary
 
 **Installation Test Results:**
+
 - ✅ Installed successfully in clean directory
 - ✅ No vulnerabilities detected
 - ✅ All files extracted correctly
@@ -1308,6 +1324,7 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
 - ✅ Session cleanup works
 
 #### 6.3: Update Documentation ✅ COMPLETE
+
 - [x] Update bindings/node/README.md:
   - [x] Remove "Phase 2 limitations" warnings
   - [x] Update "What Works" section
@@ -1319,14 +1336,14 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
   - [x] Remove JSON.stringify/parse from examples
   - [x] Mark all functions as implemented
   - [x] Add S5 persistence workflow examples
-- [x] Update CLAUDE.md Phase status
 
 **Documentation Updates:**
+
 - ✅ README.md: Updated to show Phase 1-5 complete, production ready
 - ✅ VECTOR_DB_INTEGRATION.md: Updated from "Phase 2" to "Phase 5 Complete - Production Ready"
-- ✅ CLAUDE.md: Added Phase 9 (Node.js Native Bindings), updated example code to use native objects
 
 #### 6.4: Prepare for SDK Developer ✅ COMPLETE
+
 - [x] Write developer message with:
   - [x] What's included in v0.1.0
   - [x] Installation instructions
@@ -1337,6 +1354,7 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
 - [x] Include quick start example
 
 **Developer Message Prepared:**
+
 - ✅ Comprehensive v0.1.0 release notes
 - ✅ Installation guide with tarball location
 - ✅ Breaking changes documented (metadata: JSON strings → native objects)
@@ -1354,10 +1372,12 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
 ### Current Limitations
 
 1. **Sync Stats:** `getStats()` is currently sync, should be async
+
    - Workaround: Use `try_read()` instead of blocking read
    - TODO: Make it properly async
 
 2. **Error Context:** Need better error context
+
    - TODO: Add source file/line info to errors
    - TODO: Add structured error data
 
@@ -1377,19 +1397,20 @@ During Phase 5.4 test execution, four critical bugs were discovered and fixed:
 
 ## Performance Targets
 
-| Metric | Target | Measured |
-|--------|--------|----------|
-| Session creation | < 100ms | TBD |
-| Load 100K vectors (lazy) | < 5s | TBD |
-| Search latency (p99) | < 50ms | TBD |
-| Memory overhead | < 10% | TBD |
-| S5 save time (100K vectors) | < 10s | TBD |
+| Metric                      | Target  | Measured |
+| --------------------------- | ------- | -------- |
+| Session creation            | < 100ms | TBD      |
+| Load 100K vectors (lazy)    | < 5s    | TBD      |
+| Search latency (p99)        | < 50ms  | TBD      |
+| Memory overhead             | < 10%   | TBD      |
+| S5 save time (100K vectors) | < 10s   | TBD      |
 
 ---
 
 ## Support
 
 For implementation questions, see:
+
 - napi-rs documentation: https://napi.rs
 - Fabstir Vector DB core: ../../../README.md
 - SDK integration guide: ../../docs/sdk-reference/VECTOR_DB_INTEGRATION.md
