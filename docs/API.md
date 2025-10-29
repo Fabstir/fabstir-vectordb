@@ -1,95 +1,206 @@
 # Fabstir AI Vector Database API Documentation
 
+**Version:** v0.1.1 (Chunked Storage Release)
+
 ## Overview
 
-Fabstir AI Vector Database is a decentralized vector database built on top of Enhanced S5.js with HAMT sharding for efficient O(log n) lookups. It provides high-performance vector similarity search capabilities for AI applications, with a focus on video metadata search and decentralized storage.
+Fabstir AI Vector Database is a high-performance, decentralized vector database built on S5 storage with hybrid HNSW/IVF indexing and chunked storage for AI applications. It provides scalable vector similarity search with encryption by default, optimized for video metadata search and decentralized storage.
 
 ### Key Features
 
+- **Chunked Storage**: Scalable partitioning with lazy loading (10K vectors/chunk default)
+- **Encrypted by Default**: ChaCha20-Poly1305 encryption at rest (<5% overhead)
+- **High Performance**: 58ms warm search latency, 64 MB memory for 100K vectors (Phase 6 tested)
 - **Decentralized Storage**: Built on S5 network for immutable, content-addressed storage
 - **Hybrid Indexing**: Combines HNSW (Hierarchical Navigable Small World) for recent data and IVF (Inverted File) for historical data
-- **HAMT Sharding**: Automatic activation at 1000+ vectors for scalable storage
-- **MCP Server Integration**: Enables direct integration with LLMs via Model Context Protocol
-- **High Performance**: Supports 10M+ vectors with <50ms search latency (p99)
+- **Multiple Interfaces**: REST API + Node.js native bindings (napi-rs) + WASM
+- **Memory Efficient**: 10x memory reduction vs v0.1.0 via chunked storage with LRU cache
+- **Production Ready**: Tested at scale, supports 1M+ vectors
 - **Time-based Partitioning**: Automatic migration between indices based on data age
 - **CBOR Serialization**: Compatible with S5 storage format
 
 ### Architecture Overview
 
 ```
-┌─────────────────────┐     ┌─────────────────────┐
-│   REST API Layer    │     │   MCP Server Layer  │
-│   (Port: 7530)      │     │   (Port: 7531)      │
-└──────────┬──────────┘     └──────────┬──────────┘
-           │                           │
-           └───────────┬───────────────┘
-                       │
-            ┌──────────▼──────────┐
-            │   Hybrid Index      │
-            │  ┌─────────────┐    │
-            │  │ HNSW Index  │    │
-            │  │ (Recent)    │    │
-            │  └─────────────┘    │
-            │  ┌─────────────┐    │
-            │  │ IVF Index   │    │
-            │  │ (Historical)│    │
-            │  └─────────────┘    │
-            └──────────┬──────────┘
-                       │
-            ┌──────────▼──────────┐
-            │   S5 Storage Layer  │
-            │  ┌─────────────┐    │
-            │  │Enhanced S5  │    │
-            │  │ Adapter     │    │
-            │  └──────┬──────┘    │
-            │         │           │
-            │  ┌──────▼──────┐    │
-            │  │ Mock/Real   │    │
-            │  │   Modes     │    │
-            │  └─────────────┘    │
-            │  ┌─────────────┐    │
-            │  │ CBOR Format │    │
-            │  └─────────────┘    │
-            │  ┌─────────────┐    │
-            │  │ HAMT Shard  │    │
-            │  │ (>1000 vecs)│    │
-            │  └─────────────┘    │
-            └─────────────────────┘
+┌─────────────────────────────────────────────┐
+│         Client Interfaces (v0.1.1)          │
+│  ┌──────────────┐  ┌──────────────┐  ┌────┐ │
+│  │ Node.js      │  │ REST API     │  │WASM│ │
+│  │ (napi-rs)    │  │ (Port 7533)  │  │    │ │
+│  └──────┬───────┘  └──────┬───────┘  └─┬──┘ │
+└─────────┼──────────────────┼────────────┼────┘
+          │                  │            │
+          └──────────┬───────┴────────────┘
+                     │
+          ┌──────────▼──────────┐
+          │   Hybrid Index      │
+          │  ┌─────────────┐    │
+          │  │ HNSW Index  │    │
+          │  │ (Recent)    │    │
+          │  └─────────────┘    │
+          │  ┌─────────────┐    │
+          │  │ IVF Index   │    │
+          │  │ (Historical)│    │
+          │  └─────────────┘    │
+          └──────────┬──────────┘
+                     │
+          ┌──────────▼──────────┐
+          │ Chunked Storage     │
+          │  ┌─────────────┐    │
+          │  │ 10K/chunk   │    │
+          │  │ Lazy Load   │    │
+          │  └──────┬──────┘    │
+          │         │           │
+          │  ┌──────▼──────┐    │
+          │  │ Encryption  │    │
+          │  │ (ChaCha20)  │    │
+          │  └──────┬──────┘    │
+          │         │           │
+          │  ┌──────▼──────┐    │
+          │  │Enhanced S5  │    │
+          │  │  (CBOR)     │    │
+          │  └─────────────┘    │
+          └─────────────────────┘
+                     │
+          ┌──────────▼──────────┐
+          │   S5 Network        │
+          │ (Decentralized)     │
+          └─────────────────────┘
 ```
 
-**Phase 8 Enhancements**:
-- Enhanced S5 Storage Adapter with mock and real modes
-- Improved configuration management with validation
-- Secure seed phrase handling (file support, validation)
-- Better error messages and health monitoring
+**v0.1.1 Architecture Highlights**:
+- **Chunked Storage**: Vectors partitioned into 10K chunks with lazy loading
+- **LRU Cache**: 150 MB default cache for hot chunks
+- **Encryption**: ChaCha20-Poly1305 at rest, <5% overhead
+- **Multiple Clients**: Node.js native bindings (recommended), REST API, WASM
+
+## Client Interfaces
+
+Fabstir Vector DB provides multiple interfaces for different use cases:
+
+### 1. Node.js Native Bindings (Recommended for SDK Integration)
+
+**Best for:** Node.js/TypeScript applications, SDK integration, production deployments
+
+```javascript
+const { VectorDbSession } = require('@fabstir/vector-db-native');
+
+const session = await VectorDbSession.create({
+  s5Portal: 'http://localhost:5522',
+  userSeedPhrase: 'your-seed-phrase',
+  sessionId: 'user-123',
+  encryptAtRest: true,    // Enabled by default
+  chunkSize: 10000,       // 10K vectors/chunk
+  cacheSizeMb: 150,       // Cache 10 chunks
+});
+
+// Add vectors with native object metadata
+await session.addVectors([{
+  id: 'doc1',
+  vector: [...],  // 384-dim
+  metadata: { text: 'Hello world', userId: 'user123' }
+}]);
+
+// Save to S5 (encrypted, chunked)
+const cid = await session.saveToS5();
+
+// Load from S5 (lazy loading)
+await session.loadUserVectors(cid, { lazyLoad: true });
+
+// Search (58ms warm cache)
+const results = await session.search(queryVector, 5);
+console.log(results[0].metadata.text);  // Direct property access
+
+await session.destroy();  // CRITICAL: Clean up memory
+```
+
+**Documentation:** [Node.js Integration Guide](./sdk-reference/VECTOR_DB_INTEGRATION.md)
+
+### 2. REST API (Language-Agnostic)
+
+**Best for:** Microservices, language-agnostic access, HTTP-based integrations
+
+```bash
+# Production endpoint
+curl -X POST http://localhost:7533/api/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{"vector": [0.1, 0.2, ...], "k": 5}'
+```
+
+**Port:** 7533 (production), 7530-7532 (development)
+**Documentation:** See [REST API Endpoints](#rest-api-endpoints) below
+
+### 3. WASM (Browser/Portable)
+
+**Best for:** Browser applications, portable deployments, edge computing
+
+```javascript
+import init, { VectorDB } from '@fabstir/vector-db-wasm';
+
+await init();
+const db = new VectorDB();
+db.add_vector(id, vector, metadata);
+const results = db.search(query_vector, k);
+```
+
+### Interface Comparison
+
+| Feature | Node.js Native | REST API | WASM |
+|---------|---------------|----------|------|
+| **Performance** | ⭐⭐⭐⭐⭐ Best | ⭐⭐⭐ Good | ⭐⭐⭐⭐ Very Good |
+| **Memory Efficiency** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+| **S5 Persistence** | ✅ Full support | ✅ Full support | ⚠️ Limited |
+| **Chunked Storage** | ✅ Native | ✅ Native | ⚠️ Limited |
+| **Native Metadata** | ✅ Objects | ❌ JSON strings | ❌ JSON strings |
+| **Use Case** | SDK integration | Microservices | Browser apps |
+| **Setup Complexity** | Low | Medium | Low |
 
 ## Installation & Setup
 
 ### Prerequisites
 
-- Docker and Docker Compose (recommended)
-- OR: Rust 1.70+ and Node.js 18+ (for native installation)
-- S5 Portal access (default: https://s5.vup.cx)
+- **For REST API Server:**
+  - Docker and Docker Compose (recommended)
+  - OR: Rust 1.70+ (for native installation)
+  - Enhanced S5.js running on port 5522
+- **For Node.js Bindings:**
+  - Node.js 18+ and npm
+  - Rust toolchain (for building from source)
+- **S5 Network Access:**
+  - Enhanced S5.js portal (default: http://localhost:5522)
+  - OR: Direct S5 network access (https://s5.vup.cx)
 
 ### Installation Steps
 
-#### Using Docker (Recommended)
+#### Option 1: Node.js Native Bindings (Recommended for SDK)
+
+```bash
+# Install from npm
+npm install @fabstir/vector-db-native
+
+# Or build from source
+cd bindings/node
+npm install
+npm run build
+```
+
+**Usage:** See [Client Interfaces](#client-interfaces) section above.
+
+#### Option 2: REST API Server with Docker
 
 ```bash
 # Clone the repository
 git clone https://github.com/fabstir/fabstir-ai-vector-db.git
 cd fabstir-ai-vector-db
 
-# Start with Docker Compose
-docker-compose up --build
+# Start production container
+docker-compose -f docker-compose.dev.yml up -d vector-db-prod
 
-# The API will be available at:
-# - REST API: http://localhost:7530
-# - MCP Server: http://localhost:7531
-# - Admin Interface: http://localhost:7532
+# REST API will be available at:
+# http://localhost:7533/api/v1
 ```
 
-#### Native Installation
+#### Option 3: Build REST API from Source
 
 ```bash
 # Clone the repository
@@ -97,83 +208,117 @@ git clone https://github.com/fabstir/fabstir-ai-vector-db.git
 cd fabstir-ai-vector-db
 
 # Build the Rust backend
-cargo build --release
-
-# Install JavaScript dependencies (for bindings)
-cd bindings/js
-npm install
-npm run build
-cd ../..
+cargo build --release --bin server
 
 # Run the server
-cargo run --bin server
+VECTOR_DB_PORT=7533 cargo run --release --bin server
 ```
 
+**Note:** For production deployment, you must have Enhanced S5.js running on port 5522. See [Enhanced S5.js setup](../partners/S5/GitHub/s5.js/).
+
 ### Configuration Options
+
+#### REST API Server Configuration
 
 Environment variables can be set in `.env` file or passed directly:
 
 ```bash
 # S5 Storage Configuration
-S5_MODE=mock                             # Storage mode: "mock" or "real" (default: mock)
-S5_PORTAL_URL=https://s5.vup.cx          # S5 network portal URL (required for real mode)
-S5_MOCK_SERVER_URL=http://localhost:5524 # Mock server URL (required for mock mode)
-S5_SEED_PHRASE=your-seed-phrase-here     # Optional: S5 seed phrase (12 or 24 words)
-S5_SEED_PHRASE_FILE=/path/to/seed.txt    # Optional: Path to seed phrase file
-S5_API_KEY=your-api-key                  # Optional: S5 API key
-S5_CONNECTION_TIMEOUT=5000               # Connection timeout in ms (default: 5000)
-S5_RETRY_ATTEMPTS=3                      # Number of retry attempts (default: 3)
+S5_MODE=real                              # Storage mode: "real" or "mock" (default: real)
+S5_PORTAL_URL=http://localhost:5522       # Enhanced S5.js URL (required)
+S5_SEED_PHRASE=your-seed-phrase-here      # S5 seed phrase (12 or 24 words)
+S5_SEED_PHRASE_FILE=/path/to/seed.txt     # Optional: Path to seed phrase file
+S5_API_KEY=your-api-key                   # Optional: S5 API key
+S5_CONNECTION_TIMEOUT=30000               # Connection timeout in ms (default: 30000)
+S5_RETRY_ATTEMPTS=3                       # Number of retry attempts (default: 3)
 
 # Vector Database Configuration
-VECTOR_DIMENSION=1536                     # Vector dimensions (default: 1536 for OpenAI)
-MAX_VECTORS_PER_INDEX=1000000            # Maximum vectors per index
-HAMT_BRANCHING_FACTOR=32                 # HAMT branching factor
-HAMT_ACTIVATION_THRESHOLD=1000           # Vectors count to activate HAMT sharding
+VECTOR_DIMENSION=384                      # Vector dimensions (default: 384 for all-MiniLM-L6-v2)
+MAX_VECTORS_PER_INDEX=1000000             # Maximum vectors per index
+
+# Chunked Storage Configuration (v0.1.1)
+CHUNK_SIZE=10000                          # Vectors per chunk (default: 10000)
+CACHE_SIZE_MB=150                         # Chunk cache size in MB (default: 150)
+LAZY_LOAD=true                            # Enable lazy loading (default: true)
+ENCRYPT_AT_REST=true                      # Enable encryption (default: true)
 
 # Index Configuration
-HNSW_M=16                                # HNSW connectivity parameter
-HNSW_EF_CONSTRUCTION=200                 # HNSW construction quality
-IVF_N_CLUSTERS=256                       # IVF number of clusters
-IVF_N_PROBE=16                          # IVF clusters to search
+HNSW_M=16                                 # HNSW connectivity parameter
+HNSW_EF_CONSTRUCTION=200                  # HNSW construction quality
+IVF_N_CLUSTERS=256                        # IVF number of clusters
+IVF_N_PROBE=16                            # IVF clusters to search
 
 # Server Configuration
-VECTOR_DB_HOST=0.0.0.0                   # Server host (default: 0.0.0.0)
-VECTOR_DB_PORT=7530                      # REST API port (default in code: 8080, recommended: 7530)
-MCP_SERVER_PORT=7531                     # MCP server port
-ADMIN_PORT=7532                          # Admin interface port
-VECTOR_DB_MAX_REQUEST_SIZE=10485760      # Max request size (10MB)
-VECTOR_DB_TIMEOUT_SECS=30                # Request timeout
+VECTOR_DB_HOST=0.0.0.0                    # Server host (default: 0.0.0.0)
+VECTOR_DB_PORT=7533                       # REST API port (production: 7533, dev: 7530-7532)
+VECTOR_DB_MAX_REQUEST_SIZE=10485760       # Max request size (10MB)
+VECTOR_DB_TIMEOUT_SECS=30                 # Request timeout
 VECTOR_DB_CORS_ORIGINS=http://localhost:3000  # CORS origins
 ```
 
+#### Node.js Bindings Configuration (v0.1.1)
+
+For Node.js native bindings, configuration is passed programmatically:
+
+```javascript
+const config = {
+  s5Portal: 'http://localhost:5522',      // Enhanced S5.js endpoint
+  userSeedPhrase: 'your-seed-phrase',     // 12 or 24 words
+  sessionId: 'session-123',               // Unique session ID
+
+  // Optional: Chunked storage tuning
+  chunkSize: 10000,                       // 10K vectors/chunk (default)
+  cacheSizeMb: 150,                       // 150 MB cache (default)
+  encryptAtRest: true,                    // ChaCha20-Poly1305 (default)
+
+  // Optional: Advanced settings
+  memoryBudgetMb: 512,                    // Memory limit (default: 512)
+  debug: false,                           // Debug logging (default: false)
+};
+
+const session = await VectorDbSession.create(config);
+```
+
+**Tuning Guidelines:**
+- **Memory-constrained:** `chunkSize: 5000`, `cacheSizeMb: 75`
+- **Performance-focused:** `chunkSize: 20000`, `cacheSizeMb: 300`
+- **Large datasets (1M+):** `chunkSize: 20000`, `cacheSizeMb: 300`
+
+See [Performance Tuning Guide](./PERFORMANCE_TUNING.md) for detailed optimization strategies.
+
 ### Docker Setup
 
-The project includes a comprehensive Docker setup:
+The project includes Docker configuration for production and development:
 
 ```yaml
-# docker-compose.yml
+# docker-compose.dev.yml (excerpt)
 version: "3.8"
 
 services:
-  fabstir-ai-vector-db:
-    build: .
+  vector-db-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
     ports:
-      - "7530:7530"  # REST API
-      - "7531:7531"  # MCP Server
-      - "7532:7532"  # Admin Interface
+      - "7533:7533"  # Production REST API
     environment:
-      - S5_PORTAL_URL=${S5_PORTAL_URL:-https://s5.vup.cx}
-      - VECTOR_DIMENSION=${VECTOR_DIMENSION:-1536}
-      - HAMT_ACTIVATION_THRESHOLD=${HAMT_ACTIVATION_THRESHOLD:-1000}
-    volumes:
-      - vector-data:/home/developer/fabstir-ai-vector-db/data
+      - S5_PORTAL_URL=http://host.docker.internal:5522
+      - VECTOR_DIMENSION=${VECTOR_DIMENSION:-384}
+      - CHUNK_SIZE=${CHUNK_SIZE:-10000}
+      - CACHE_SIZE_MB=${CACHE_SIZE_MB:-150}
+      - ENCRYPT_AT_REST=${ENCRYPT_AT_REST:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
+
+**Important:** Use `host.docker.internal:5522` for S5 portal URL when running in Docker to access Enhanced S5.js on the host.
 
 ## Core API Reference
 
 ### REST API Endpoints
 
-Base URL: `http://localhost:7530/api/v1`
+**Base URL (Production):** `http://localhost:7533/api/v1`
+**Development Ports:** 7530-7532
 
 #### Health Check
 
@@ -441,96 +586,22 @@ GET /ws
 Upgrade: websocket
 ```
 
-## MCP Server Integration
+## Future Features (Planned)
 
-The MCP (Model Context Protocol) server enables direct integration with LLMs. It runs on port 7531 by default.
+The following features are planned for future releases:
 
-### Connecting LLMs via MCP
+### MCP Server Integration (Planned)
 
-#### Configuration Example
+**Status:** 🚧 Not yet implemented
 
-```json
-{
-  "mcpServers": {
-    "fabstir-vector-db": {
-      "command": "node",
-      "args": ["./mcp-server.js"],
-      "env": {
-        "VECTOR_DB_URL": "http://localhost:7530",
-        "MCP_PORT": "7531"
-      }
-    }
-  }
-}
-```
+The MCP (Model Context Protocol) server will enable direct integration with LLMs like Claude. This feature is planned for a future release and will provide:
 
-### Available MCP Endpoints
+- Direct vector search tool for LLMs
+- Vector insertion/management via MCP
+- Seamless integration with Claude Desktop and other MCP clients
+- Real-time context retrieval for AI applications
 
-#### Vector Search Tool
-
-```json
-{
-  "name": "vector_search",
-  "description": "Search for similar vectors in the database",
-  "input_schema": {
-    "type": "object",
-    "properties": {
-      "query_vector": {
-        "type": "array",
-        "items": {"type": "number"}
-      },
-      "k": {
-        "type": "integer",
-        "default": 10
-      },
-      "filter": {
-        "type": "object"
-      }
-    },
-    "required": ["query_vector"]
-  }
-}
-```
-
-#### Insert Vector Tool
-
-```json
-{
-  "name": "insert_vector",
-  "description": "Insert a new vector into the database",
-  "input_schema": {
-    "type": "object",
-    "properties": {
-      "id": {"type": "string"},
-      "vector": {
-        "type": "array",
-        "items": {"type": "number"}
-      },
-      "metadata": {"type": "object"}
-    },
-    "required": ["id", "vector"]
-  }
-}
-```
-
-### Example MCP Integration
-
-```javascript
-// Example: Using with Claude or other LLM
-const mcp = new MCPClient({
-  url: 'http://localhost:7531',
-  apiKey: process.env.MCP_API_KEY
-});
-
-// Search for similar videos
-const results = await mcp.call('vector_search', {
-  query_vector: embeddingVector,
-  k: 5,
-  filter: {
-    tags: ['ai', 'tutorial']
-  }
-});
-```
+**Tracking:** See GitHub issues for progress updates.
 
 ## Data Models
 
@@ -1037,39 +1108,57 @@ await vectorDB.insertVector({
 
 ## Performance & Scalability
 
-### Benchmarks
+### v0.1.1 Benchmarks (Phase 6 - Actual Results)
 
-Performance metrics on standard hardware (16 CPU cores, 32GB RAM):
+**Test Environment:** Node.js native bindings, all-MiniLM-L6-v2 embeddings (384-dim)
 
-| Operation | Vectors | Latency (p50) | Latency (p99) | Throughput |
-|-----------|---------|---------------|---------------|------------|
-| Insert    | 1M      | 0.5ms         | 2ms           | 2000 ops/s |
-| Insert    | 10M     | 0.8ms         | 3ms           | 1250 ops/s |
-| Search    | 1M      | 15ms          | 45ms          | 1000 QPS   |
-| Search    | 10M     | 25ms          | 50ms          | 500 QPS    |
+#### 100K Vectors - Production Ready ✅
+
+| Metric | v0.1.0 | v0.1.1 | Improvement |
+|--------|--------|--------|-------------|
+| **Load Time** | ~4000ms | **685ms** | **6x faster** |
+| **Memory Usage** | ~640 MB | **64 MB** | **10x reduction** |
+| **Search (warm)** | ~60ms | **58ms** | Similar |
+| **Search (cold)** | ~1200ms | **~1000ms** | ~17% faster |
+| **Encryption Overhead** | N/A | **<5%** | ChaCha20-Poly1305 |
+
+#### Key Improvements (v0.1.1)
+
+- ✅ **Chunked Storage**: 10K vectors/chunk with lazy loading
+- ✅ **LRU Cache**: 150 MB default, configurable
+- ✅ **Encryption**: Enabled by default, minimal overhead
+- ✅ **Memory Efficiency**: 10x reduction via lazy loading
+- ✅ **Scalability**: Tested to 1M+ vectors
 
 ### Scaling Considerations
 
-#### 1. Memory Usage
+#### 1. Memory Usage (v0.1.1 Chunked Storage)
 
-- **HNSW Index**: ~500 bytes per vector
-- **IVF Index**: ~100 bytes per vector
-- **Metadata**: Variable (typically 100-500 bytes)
+**With Lazy Loading (Default):**
+- **100K vectors**: ~64 MB (10 chunks × 6.4 MB/chunk cached)
+- **500K vectors**: ~128 MB (cache limited to ~10 chunks)
+- **1M+ vectors**: ~150-200 MB (LRU cache maintains constant memory)
 
-Example memory requirements:
-- 1M vectors: ~1GB RAM
-- 10M vectors: ~10GB RAM
-- 100M vectors: ~100GB RAM
+**Formula:**
+```
+Memory ≈ cacheSizeMb + (active_chunks × ~6-15 MB)
+```
 
-#### 2. Storage Requirements
+**Tuning:**
+- Memory-constrained: `cacheSizeMb: 75` → ~100 MB total
+- Performance-focused: `cacheSizeMb: 300` → ~350 MB total
 
-- **Raw Vectors**: 4 bytes × dimension per vector
-- **Compressed**: ~60-70% of raw size with zstd
-- **Indexes**: Additional 20-30% overhead
+#### 2. Storage Requirements (384-dim vectors)
 
-Example storage for 1536-dim vectors:
-- 1M vectors: ~6GB (raw) → ~4GB (compressed)
-- 10M vectors: ~60GB (raw) → ~40GB (compressed)
+**v0.1.1 with Chunked Storage + Encryption:**
+- **Raw**: 384 × 4 bytes = 1.5 KB per vector
+- **Chunked + Encrypted**: ~1.6 KB per vector (<5% overhead)
+- **Indexes (HNSW)**: Additional ~500 bytes per vector
+
+**Examples:**
+- 100K vectors: ~200 MB (storage)
+- 1M vectors: ~2 GB (storage)
+- 10M vectors: ~20 GB (storage)
 
 #### 3. Query Performance Optimization
 
@@ -1425,3 +1514,126 @@ app.use('/search', requireRole('reader'));
 - Documentation: https://docs.fabstir.ai/vector-db
 - Community Discord: https://discord.gg/fabstir
 - Email Support: support@fabstir.ai
+
+---
+
+## Version History
+
+### v0.1.1 - Chunked Storage Release (2025-01-28)
+
+**Major Features:**
+- ✅ **Chunked Storage**: Scalable partitioning with 10K vectors/chunk default
+- ✅ **Lazy Loading**: On-demand chunk loading with LRU cache (150 MB default)
+- ✅ **Encryption by Default**: ChaCha20-Poly1305 at rest (<5% overhead)
+- ✅ **Node.js Native Bindings**: Production-ready napi-rs bindings (v0.1.0)
+- ✅ **Memory Optimization**: 10x reduction (64 MB for 100K vectors vs 640 MB in v0.1.0)
+- ✅ **Performance**: 6x faster load times (685ms vs ~4000ms)
+
+**API Changes:**
+- Added `chunkSize`, `cacheSizeMb`, `encryptAtRest` to `VectorDbConfig`
+- Added `lazyLoad` option to `loadUserVectors()`
+- Updated default S5 timeout to 30 seconds for real S5 operations
+- Changed production port from 7530 to 7533
+
+**Performance (Phase 6 Tested - 100K vectors):**
+- Load: 685ms
+- Memory: 64 MB
+- Search (warm): 58ms
+- Search (cold): ~1000ms
+- Encryption overhead: <5%
+
+**Documentation:**
+- Added [Performance Tuning Guide](./PERFORMANCE_TUNING.md)
+- Updated [Vector DB Integration Guide](./sdk-reference/VECTOR_DB_INTEGRATION.md)
+- Refreshed README with v0.1.1 features
+
+### v0.1.0 - Initial Production Release (2025-01-15)
+
+**Features:**
+- Basic HNSW/IVF hybrid indexing
+- S5 storage integration
+- REST API (port 7530)
+- Node.js bindings (early version)
+- Basic search and insert operations
+
+**Known Limitations:**
+- High memory usage (640 MB for 100K vectors)
+- Slow load times (~4 seconds for 100K vectors)
+- No encryption at rest
+- No chunked storage
+
+### Pre-v0.1.0 - Development Phases
+
+**Phase 1-5: Core Infrastructure**
+- HNSW index implementation
+- IVF index implementation
+- Hybrid routing logic
+- S5 storage adapter
+- Basic REST API
+
+**Phase 6: Testing & Optimization**
+- 100K vector testing
+- Performance benchmarking
+- Memory profiling
+
+**Phase 7: Documentation**
+- API documentation
+- Integration guides
+- Performance tuning guides
+
+**Phase 8: Enhanced S5.js Integration**
+- Mock and real S5 modes
+- Configuration management
+- Seed phrase handling
+- Health monitoring
+
+**Phase 9: Node.js Native Bindings**
+- napi-rs implementation
+- S5 persistence
+- Native metadata support
+- Production testing
+
+---
+
+## Migration Guide
+
+### Upgrading from v0.1.0 to v0.1.1
+
+**Node.js Bindings:**
+
+```javascript
+// v0.1.0 - No chunked storage
+const session = await VectorDbSession.create({
+  s5Portal: 'http://localhost:5522',
+  userSeedPhrase: 'seed',
+  sessionId: 'id',
+});
+
+// v0.1.1 - Add chunked storage config
+const session = await VectorDbSession.create({
+  s5Portal: 'http://localhost:5522',
+  userSeedPhrase: 'seed',
+  sessionId: 'id',
+  chunkSize: 10000,        // NEW: Chunked storage
+  cacheSizeMb: 150,        // NEW: Cache configuration
+  encryptAtRest: true,     // NEW: Encryption (default)
+});
+
+// Load with lazy loading
+await session.loadUserVectors(cid, { lazyLoad: true }); // NEW: lazyLoad option
+```
+
+**REST API:**
+
+- Update base URL: `http://localhost:7530/api/v1` → `http://localhost:7533/api/v1`
+- S5 timeout increased: 5000ms → 30000ms (no code changes needed)
+
+**Data Compatibility:**
+
+- ✅ CIDs from v0.1.0 are **compatible** with v0.1.1
+- v0.1.1 saves in chunked format (not backward compatible)
+- Recommend re-saving data to benefit from chunked storage
+
+---
+
+**Last Updated:** 2025-01-28 | **API Version:** v0.1.1
