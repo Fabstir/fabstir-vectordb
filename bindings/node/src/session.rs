@@ -322,6 +322,43 @@ impl VectorDBSession {
         Ok(())
     }
 
+    /// Delete a vector from the index by ID
+    ///
+    /// Performs soft deletion - vector is marked as deleted but not physically removed
+    /// until vacuum() is called or the index is saved and reloaded.
+    ///
+    /// # Arguments
+    /// * `id` - The ID of the vector to delete
+    ///
+    /// # Errors
+    /// Returns error if:
+    /// - Vector with given ID does not exist
+    /// - Session has been destroyed
+    #[napi]
+    pub async unsafe fn delete_vector(&mut self, id: String) -> Result<()> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        let vector_id = VectorId::from_string(&id);
+
+        // Delete from index (soft deletion)
+        let index = state.index.clone();
+        let index_guard = index.write().await;
+
+        index_guard.delete(vector_id.clone())
+            .await
+            .map_err(|e| VectorDBError::index_error(format!("Failed to delete vector: {}", e)))?;
+
+        drop(index_guard);
+
+        // Remove from metadata HashMap
+        let metadata_map = state.metadata.clone();
+        let mut metadata_guard = metadata_map.write().await;
+        metadata_guard.remove(&vector_id.to_string());
+
+        Ok(())
+    }
+
     /// Save index to S5 using chunked storage format
     #[napi]
     pub async fn save_to_s5(&self) -> Result<String> {
@@ -371,18 +408,17 @@ impl VectorDBSession {
 
     /// Get session statistics
     #[napi]
-    pub fn get_stats(&self) -> Result<SessionStats> {
+    pub async fn get_stats(&self) -> Result<SessionStats> {
         let state = self.state.as_ref()
             .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
 
-        // Get stats from HybridIndex (synchronous call)
-        let index = state.index.try_read()
-            .map_err(|_| VectorDBError::session_error("Failed to read index stats"))?;
-
+        // Get active count (excludes deleted vectors)
+        let index = state.index.read().await;
+        let active_count = index.active_count().await;
         let stats = index.get_stats();
 
         Ok(SessionStats {
-            vector_count: stats.total_vectors as u32,
+            vector_count: active_count as u32,
             memory_usage_mb: ((stats.recent_index_memory + stats.historical_index_memory) as f64) / 1_048_576.0,
             index_type: "hybrid".to_string(),
             hnsw_vector_count: Some(stats.recent_vectors as u32),

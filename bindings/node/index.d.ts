@@ -91,10 +91,25 @@ export declare class VectorDbSession {
   ): Promise<Array<SearchResult>>;
   /** Add vectors to the index */
   addVectors(vectors: Array<VectorInput>): Promise<void>;
+  /**
+   * Delete a vector from the index by ID
+   *
+   * Performs soft deletion - vector is marked as deleted but not physically removed
+   * until vacuum() is called or the index is saved and reloaded.
+   *
+   * # Arguments
+   * * `id` - The ID of the vector to delete
+   *
+   * # Errors
+   * Returns error if:
+   * - Vector with given ID does not exist
+   * - Session has been destroyed
+   */
+  deleteVector(id: string): Promise<void>;
   /** Save index to S5 using chunked storage format */
   saveToS5(): Promise<string>;
   /** Get session statistics */
-  getStats(): SessionStats;
+  getStats(): Promise<SessionStats>;
   /** Destroy session and clear memory */
   destroy(): Promise<void>;
 }
