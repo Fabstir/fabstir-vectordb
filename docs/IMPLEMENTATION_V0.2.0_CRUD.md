@@ -1,0 +1,813 @@
+# Fabstir Vector DB v0.2.0 - CRUD Operations Implementation
+
+## Project Overview
+
+Implement deletion, update, and filtering capabilities to make Fabstir Vector DB production-ready for applications requiring data lifecycle management. This addresses the critical gap in v0.1.1 where vectors cannot be deleted or updated after insertion, making it unsuitable for real-world applications where users can delete documents, GDPR "right to be forgotten", content moderation, etc.
+
+**Target Version**: v0.2.0
+**Timeline**: 6-8 weeks (MVP: 6 weeks)
+**Breaking Changes**: Acceptable (manifest v2 → v3)
+
+## Architecture Summary
+
+### New Capabilities
+
+```
+CRUD Operations (v0.2.0):
+├── Deletion
+│   ├── deleteVector(id)           # Delete single vector
+│   ├── deleteByMetadata(filter)   # Delete by metadata criteria
+│   └── vacuum()                   # Optional: Manual cleanup
+├── Updates
+│   └── updateMetadata(id, metadata)  # Metadata-only updates
+└── Filtering
+    ├── search({ filter: {...} })     # Metadata filtering
+    └── Filter Language
+        ├── Equals, In, Range        # Basic operators
+        └── And, Or                  # Combinators
+```
+
+### Storage Changes (Manifest v3)
+
+```
+session-123/
+├── manifest.json                    # Version 2 → 3
+│   ├── version: 3                  # NEW
+│   ├── deleted_vectors: [...]      # NEW: Tombstone list
+│   ├── schema: {...}               # NEW: Optional schema definition
+│   └── (existing v2 fields)
+└── (chunks remain unchanged)
+```
+
+### Key Design Decisions
+
+- **Soft Deletion**: Mark as deleted, filter from results, physically remove on save
+- **IVF Deletion**: Copy HNSW pattern (`mark_deleted()`, `vacuum()`)
+- **Metadata Updates**: In-memory HashMap only (no vector/index changes)
+- **Post-Filtering**: Filter after vector search (no indexed metadata)
+- **Lazy Deletion**: Defer chunk rewriting until next `saveToS5()`
+
+## Current Status
+
+- ⏳ Phase 1: IVF Soft Deletion (0%)
+  - ⏳ Phase 1.1: IVF Deletion Operations (0%)
+  - ⏳ Phase 1.2: Hybrid Index Deletion Integration (0%)
+- ⏳ Phase 2: Node.js Deletion API (0%)
+  - ⏳ Phase 2.1: deleteVector Implementation (0%)
+  - ⏳ Phase 2.2: deleteByMetadata Implementation (0%)
+  - ⏳ Phase 2.3: Persistence Integration (0%)
+- ⏳ Phase 3: Metadata Updates (0%)
+  - ⏳ Phase 3.1: updateMetadata Implementation (0%)
+  - ⏳ Phase 3.2: Save/Load Integration (0%)
+- ⏳ Phase 4: Metadata Filtering (0%)
+  - ⏳ Phase 4.1: Filter Language (0%)
+  - ⏳ Phase 4.2: Search Integration (0%)
+  - ⏳ Phase 4.3: Node.js Filter API (0%)
+- ⏳ Phase 5: Testing & Documentation (0%)
+  - ⏳ Phase 5.1: Integration Testing (0%)
+  - ⏳ Phase 5.2: Documentation Updates (0%)
+- ⏳ Phase 6: Optional Polish (0%)
+  - ⏳ Phase 6.1: Schema Validation (0%)
+  - ⏳ Phase 6.2: Vacuum API (0%)
+
+## Implementation Phases
+
+### Phase 1: IVF Soft Deletion (Week 1 - 5 days)
+
+Add deletion support to IVF index by copying HNSW's soft deletion pattern.
+
+#### 1.1 IVF Deletion Operations (Day 1-2)
+
+**TDD Approach**: Write tests first, then implement
+
+- [ ] **Test File**: `tests/unit/ivf_deletion_tests.rs` (create, ~200 lines)
+
+  - [ ] Test `mark_deleted()` marks vector as deleted
+  - [ ] Test `is_deleted()` returns true for deleted vectors
+  - [ ] Test `batch_delete()` marks multiple vectors
+  - [ ] Test deleted vectors excluded from search
+  - [ ] Test `vacuum()` physically removes deleted vectors
+  - [ ] Test `active_count()` excludes deleted vectors
+  - [ ] Test deletion of vector in multiple clusters (error handling)
+  - [ ] Test deletion of non-existent vector (error handling)
+
+- [ ] **Implementation**: `src/ivf/operations.rs` (modify, add ~150 lines)
+
+  - [ ] Add `deleted: HashSet<VectorId>` field to `IVFIndex` struct
+  - [ ] Implement `mark_deleted(&mut self, id: &VectorId) -> Result<(), IVFError>`
+    - Add vector ID to deleted set
+    - Return error if vector not found
+  - [ ] Implement `is_deleted(&self, id: &VectorId) -> bool`
+    - Check if ID is in deleted set
+  - [ ] Implement `batch_delete(&mut self, ids: &[VectorId]) -> Result<usize, OperationError>`
+    - Mark multiple vectors as deleted
+    - Return count of successfully deleted vectors
+  - [ ] Modify `search()` to skip deleted vectors (lines ~120-180)
+    - After finding candidates, filter out deleted IDs
+  - [ ] Implement `vacuum(&mut self) -> Result<usize, OperationError>`
+    - Iterate through inverted lists
+    - Remove vectors that are marked deleted
+    - Clear deleted set
+    - Return count of physically removed vectors
+  - [ ] Implement `active_count(&self) -> usize`
+    - Return total vectors minus deleted count
+
+- [ ] **Modify**: `src/ivf/core.rs` (add field, update constructor)
+  - [ ] Add `deleted: HashSet<VectorId>` to struct (line ~40)
+  - [ ] Initialize in `new()` constructor
+  - [ ] Update `from_trained()` to include deleted set
+
+**Bounded Autonomy**: Target ~150 lines added to operations.rs, ~20 lines to core.rs
+
+**Reference**: `src/hnsw/operations.rs:127-200` (existing HNSW deletion pattern to copy)
+
+**Test Results**: _Awaiting implementation_
+
+#### 1.2 Hybrid Index Deletion Integration (Day 3)
+
+**TDD Approach**: Write integration tests
+
+- [ ] **Test File**: `tests/integration/hybrid_deletion_tests.rs` (create, ~250 lines)
+
+  - [ ] Test delete from recent index (HNSW)
+  - [ ] Test delete from historical index (IVF)
+  - [ ] Test delete vector that exists in both indices (error case)
+  - [ ] Test search excludes deleted vectors (both indices)
+  - [ ] Test `vacuum()` on hybrid index (calls both HNSW and IVF)
+  - [ ] Test deletion persists across save/load
+  - [ ] Test active_count() on hybrid index
+  - [ ] Test concurrent deletion (thread safety)
+
+- [ ] **Implementation**: `src/hybrid/core.rs` (modify, add ~100 lines)
+
+  - [ ] Implement `delete(&self, id: VectorId) -> Result<(), HybridError>`
+    - Check which index contains the vector (recent vs historical)
+    - Delegate to appropriate index's `mark_deleted()`
+    - Return error if vector not found in either index
+  - [ ] Implement `batch_delete(&self, ids: Vec<VectorId>) -> Result<DeleteStats, HybridError>`
+    - Iterate through IDs
+    - Delete from appropriate index
+    - Return stats: successful, failed, errors
+  - [ ] Implement `vacuum(&self) -> Result<VacuumStats, HybridError>`
+    - Call vacuum on HNSW index
+    - Call vacuum on IVF index
+    - Return combined stats
+  - [ ] Implement `active_count(&self) -> usize`
+    - Sum active counts from both indices
+  - [ ] Define `DeleteStats` struct (successful, failed, errors)
+  - [ ] Define `VacuumStats` struct (hnsw_removed, ivf_removed, total)
+
+**Bounded Autonomy**: Target ~100 lines added to hybrid/core.rs
+
+**Test Results**: _Awaiting implementation_
+
+---
+
+### Phase 2: Node.js Deletion API (Week 2 - 5 days)
+
+Expose deletion operations through Node.js bindings.
+
+#### 2.1 deleteVector Implementation (Day 4-5)
+
+**TDD Approach**: Write Node.js tests first
+
+- [ ] **Test File**: `bindings/node/test/delete-vector.test.js` (create, ~200 lines)
+
+  - [ ] Test delete single vector by ID
+  - [ ] Test delete returns success
+  - [ ] Test deleted vector not in search results
+  - [ ] Test delete removes from metadata HashMap
+  - [ ] Test delete non-existent vector (error handling)
+  - [ ] Test delete then add same ID (allowed, replaces)
+  - [ ] Test getStats() shows reduced count after delete
+  - [ ] Test multiple deletes
+
+- [ ] **Implementation**: `bindings/node/src/session.rs` (add ~80 lines)
+
+  - [ ] Add `#[napi]` method `delete_vector(&mut self, id: String) -> Result<()>`
+    - Call `self.index.delete(VectorId::from_string(&id))`
+    - Remove from `self.metadata` HashMap
+    - Remove from `self.timestamps` HashMap (if exists)
+    - Return error if deletion fails
+  - [ ] Update error handling for `VectorNotFound` errors
+
+- [ ] **TypeScript Definitions**: `bindings/node/index.d.ts` (auto-generated)
+  - [ ] Verify `deleteVector(id: string): Promise<void>` is generated
+  - [ ] Add JSDoc comments in Rust code for documentation
+
+**Bounded Autonomy**: ~80 lines in session.rs
+
+**Test Results**: _Awaiting implementation_
+
+#### 2.2 deleteByMetadata Implementation (Day 6-7)
+
+**TDD Approach**: Write Node.js tests first
+
+- [ ] **Test File**: `bindings/node/test/delete-by-metadata.test.js` (create, ~250 lines)
+
+  - [ ] Test delete by single field match (e.g., `{ userId: 'user123' }`)
+  - [ ] Test delete by multiple fields (AND logic)
+  - [ ] Test delete returns count of deleted vectors
+  - [ ] Test deleted vectors not in search results
+  - [ ] Test delete with no matches (returns 0)
+  - [ ] Test delete with nested metadata fields
+  - [ ] Test delete with array values (`{ tags: ['ai', 'ml'] }`)
+  - [ ] Test delete all vectors with empty filter (safety check)
+
+- [ ] **Implementation**: `bindings/node/src/session.rs` (add ~120 lines)
+
+  - [ ] Add `#[napi]` method `delete_by_metadata(&mut self, filter: serde_json::Value) -> Result<DeleteResult>`
+    - Scan `self.metadata` HashMap
+    - For each vector, check if metadata matches filter
+    - Collect matching vector IDs
+    - Call `self.index.batch_delete(ids)`
+    - Remove from `self.metadata` and `self.timestamps`
+    - Return DeleteResult with count
+  - [ ] Implement `matches_filter(metadata: &serde_json::Value, filter: &serde_json::Value) -> bool`
+    - Simple object field matching (exact equality)
+    - Support nested field access (e.g., `{ "user.id": "123" }`)
+  - [ ] Define `DeleteResult` struct (deleted_count: u32, deleted_ids: Vec<String>)
+
+- [ ] **Implementation**: `bindings/node/src/types.rs` (add ~40 lines)
+  - [ ] Define `#[napi(object)] DeleteResult` struct
+    - `deleted_count: u32`
+    - `deleted_ids: Vec<String>`
+
+**Bounded Autonomy**: ~120 lines in session.rs, ~40 lines in types.rs
+
+**Test Results**: _Awaiting implementation_
+
+#### 2.3 Persistence Integration (Day 8)
+
+**TDD Approach**: Write integration tests for save/load with deletions
+
+- [ ] **Test File**: `tests/integration/deletion_persistence_tests.rs` (create, ~200 lines)
+
+  - [ ] Test save index with deleted vectors (manifest includes tombstones)
+  - [ ] Test load index with deleted vectors (skips deleted IDs)
+  - [ ] Test manifest v3 format (version field, deleted_vectors list)
+  - [ ] Test backward compatibility: load v2 manifest (no deleted_vectors)
+  - [ ] Test forward compatibility: v2 code rejects v3 manifest
+  - [ ] Test vacuum before save (reduces tombstone list)
+  - [ ] Test deleted vectors excluded after load + search
+
+- [ ] **Implementation**: `src/core/chunk.rs` (modify Manifest struct)
+
+  - [ ] Bump `MANIFEST_VERSION` from 2 to 3
+  - [ ] Add `deleted_vectors: Option<Vec<String>>` to `Manifest` struct
+  - [ ] Update JSON serialization to include new field
+  - [ ] Add validation: reject versions > 3
+
+- [ ] **Implementation**: `src/hybrid/persistence.rs` (modify ~60 lines)
+
+  - [ ] Modify `save_index_chunked()` to include deleted vectors in manifest
+    - Extract deleted IDs from HNSW and IVF indices
+    - Add to manifest.deleted_vectors
+  - [ ] Modify `load_index_chunked()` to skip deleted vectors
+    - Read manifest.deleted_vectors
+    - After loading chunks, mark vectors as deleted in indices
+    - Verify deleted vectors are excluded from search
+
+**Bounded Autonomy**: ~30 lines to chunk.rs, ~60 lines to persistence.rs
+
+**Test Results**: _Awaiting implementation_
+
+---
+
+### Phase 3: Metadata Updates (Week 3 - 2-3 days)
+
+Add ability to update metadata without re-indexing vectors.
+
+#### 3.1 updateMetadata Implementation (Day 9-10)
+
+**TDD Approach**: Write tests first
+
+- [ ] **Test File**: `bindings/node/test/update-metadata.test.js` (create, ~180 lines)
+
+  - [ ] Test update metadata for existing vector
+  - [ ] Test updated metadata returned in search results
+  - [ ] Test update replaces entire metadata object
+  - [ ] Test update non-existent vector (error handling)
+  - [ ] Test update preserves internal fields (_originalId)
+  - [ ] Test update multiple vectors sequentially
+  - [ ] Test update with native object metadata
+  - [ ] Test update after load from S5
+
+- [ ] **Implementation**: `bindings/node/src/session.rs` (add ~60 lines)
+
+  - [ ] Add `#[napi]` method `update_metadata(&mut self, id: String, metadata: serde_json::Value) -> Result<()>`
+    - Check if vector exists in index (call `self.index.contains(&vector_id)`)
+    - Update `self.metadata` HashMap with new metadata
+    - Preserve `_originalId` field (copy from old metadata or add)
+    - Return error if vector not found
+  - [ ] Add error type for `VectorNotFound`
+
+- [ ] **TypeScript Definitions**: `bindings/node/index.d.ts` (auto-generated)
+  - [ ] Verify `updateMetadata(id: string, metadata: any): Promise<void>` is generated
+
+**Bounded Autonomy**: ~60 lines in session.rs
+
+**Test Results**: _Awaiting implementation_
+
+#### 3.2 Save/Load Integration (Day 11)
+
+**TDD Approach**: Write integration tests
+
+- [ ] **Test File**: `tests/integration/metadata_update_persistence_tests.rs` (create, ~150 lines)
+
+  - [ ] Test metadata updates persist after save/load
+  - [ ] Test updated metadata returned in search after reload
+  - [ ] Test update + save + load + search roundtrip
+  - [ ] Test metadata saved to S5 correctly (via mock backend)
+
+- [ ] **Verify**: Metadata persistence already implemented in v0.1.1
+  - [ ] Check `save_index_chunked()` saves metadata HashMap to S5 (line ~330 in persistence.rs)
+  - [ ] Check `load_index_chunked()` loads metadata HashMap from S5 (line ~510 in persistence.rs)
+  - [ ] Confirm no changes needed (metadata updates already persist)
+
+**Bounded Autonomy**: No code changes expected (verification only)
+
+**Test Results**: _Awaiting implementation_
+
+---
+
+### Phase 4: Metadata Filtering (Week 4-5 - 8-10 days)
+
+Add ability to filter search results by metadata criteria.
+
+#### 4.1 Filter Language (Day 12-15)
+
+**TDD Approach**: Write unit tests for filter parsing and evaluation
+
+- [ ] **Test File**: `tests/unit/metadata_filter_tests.rs` (create, ~300 lines)
+
+  - [ ] Test Equals filter (`{ "field": "value" }`)
+  - [ ] Test In filter (`{ "field": { "$in": ["val1", "val2"] } }`)
+  - [ ] Test Range filter (`{ "age": { "$gte": 18, "$lte": 65 } }`)
+  - [ ] Test And combinator (`{ "$and": [filter1, filter2] }`)
+  - [ ] Test Or combinator (`{ "$or": [filter1, filter2] }`)
+  - [ ] Test nested field access (`{ "user.id": "123" }`)
+  - [ ] Test array field matching (`{ "tags": "ai" }` matches if "ai" in tags array)
+  - [ ] Test filter parsing from JSON
+  - [ ] Test filter evaluation against metadata
+  - [ ] Test invalid filter syntax (error handling)
+
+- [ ] **Implementation**: `src/core/metadata_filter.rs` (create, ~250 lines)
+
+  - [ ] Define `MetadataFilter` enum:
+    ```rust
+    pub enum MetadataFilter {
+        Equals { field: String, value: serde_json::Value },
+        In { field: String, values: Vec<serde_json::Value> },
+        Range { field: String, min: Option<f64>, max: Option<f64> },
+        And(Vec<MetadataFilter>),
+        Or(Vec<MetadataFilter>),
+    }
+    ```
+  - [ ] Implement `MetadataFilter::from_json(value: &serde_json::Value) -> Result<Self, FilterError>`
+    - Parse JSON object into filter tree
+    - Detect special operators: `$in`, `$gte`, `$lte`, `$and`, `$or`
+    - Default to Equals for plain key-value pairs
+  - [ ] Implement `MetadataFilter::matches(&self, metadata: &serde_json::Value) -> bool`
+    - Equals: Extract field, compare values
+    - In: Check if field value is in values list
+    - Range: Check if field value is within [min, max]
+    - And: All sub-filters must match
+    - Or: At least one sub-filter must match
+  - [ ] Implement `get_field(metadata: &serde_json::Value, path: &str) -> Option<&serde_json::Value>`
+    - Support nested paths: "user.id" → metadata["user"]["id"]
+  - [ ] Define `FilterError` enum (InvalidSyntax, UnsupportedOperator, etc.)
+
+- [ ] **Modify**: `src/core/mod.rs`
+  - [ ] Add `pub mod metadata_filter;`
+  - [ ] Export `MetadataFilter`, `FilterError`
+
+**Bounded Autonomy**: ~250 lines for metadata_filter.rs
+
+**Test Results**: _Awaiting implementation_
+
+#### 4.2 Search Integration (Day 16-18)
+
+**TDD Approach**: Write integration tests for filtered search
+
+- [ ] **Test File**: `tests/integration/search_filter_tests.rs` (create, ~350 lines)
+
+  - [ ] Test search with Equals filter
+  - [ ] Test search with In filter
+  - [ ] Test search with Range filter
+  - [ ] Test search with And combinator
+  - [ ] Test search with Or combinator
+  - [ ] Test search with no matches (returns empty)
+  - [ ] Test search with k_oversample (e.g., search 30, filter to 10)
+  - [ ] Test filter performance: cold cache vs warm cache
+  - [ ] Test filter with HNSW index
+  - [ ] Test filter with IVF index
+  - [ ] Test filter with hybrid search (both indices)
+
+- [ ] **Implementation**: `src/hybrid/search_integration.rs` (modify, add ~150 lines)
+
+  - [ ] Add `filter: Option<MetadataFilter>` to `SearchOptions` struct
+  - [ ] Modify `search_with_options()` to support filtering:
+    - If filter is None, return results as-is (no filtering)
+    - If filter is Some, implement k_oversample strategy:
+      - Calculate k_oversample = k * 3 (configurable multiplier)
+      - Run vector search with k_oversample
+      - Filter results by metadata using `filter.matches(metadata)`
+      - Truncate to k results
+      - Return filtered results
+  - [ ] Add `filter_results(results: Vec<SearchResult>, filter: &MetadataFilter, metadata_map: &HashMap<VectorId, serde_json::Value>, k: usize) -> Vec<SearchResult>`
+    - Helper function for post-filtering logic
+
+- [ ] **Implementation**: `src/hybrid/core.rs` (modify ~40 lines)
+  - [ ] Update `search()` signature to accept `filter: Option<MetadataFilter>`
+  - [ ] Pass filter to `search_with_options()`
+
+**Bounded Autonomy**: ~150 lines to search_integration.rs, ~40 lines to core.rs
+
+**Test Results**: _Awaiting implementation_
+
+#### 4.3 Node.js Filter API (Day 19-20)
+
+**TDD Approach**: Write Node.js tests first
+
+- [ ] **Test File**: `bindings/node/test/search-filter.test.js` (create, ~300 lines)
+
+  - [ ] Test search with Equals filter
+  - [ ] Test search with In filter
+  - [ ] Test search with Range filter
+  - [ ] Test search with And combinator
+  - [ ] Test search with Or combinator
+  - [ ] Test search with nested field filter
+  - [ ] Test search with array field filter
+  - [ ] Test search with no filter (backward compatibility)
+  - [ ] Test search with invalid filter (error handling)
+  - [ ] Test filter + threshold combined
+
+- [ ] **Implementation**: `bindings/node/src/types.rs` (modify ~30 lines)
+
+  - [ ] Add `filter: Option<serde_json::Value>` to `SearchOptions` struct
+  - [ ] Update NAPI object definition
+
+- [ ] **Implementation**: `bindings/node/src/session.rs` (modify ~50 lines)
+
+  - [ ] Modify `search()` to extract filter from options
+  - [ ] Parse filter JSON into `MetadataFilter` (if present)
+  - [ ] Pass filter to `self.index.search()`
+  - [ ] Handle filter parsing errors gracefully
+
+- [ ] **TypeScript Definitions**: `bindings/node/index.d.ts` (auto-generated)
+
+  - [ ] Verify `filter?: any` added to `SearchOptions` interface
+  - [ ] Add JSDoc examples:
+    ```typescript
+    // Equals filter
+    { filter: { userId: "user123" } }
+    // In filter
+    { filter: { tags: { $in: ["ai", "ml"] } } }
+    // Range filter
+    { filter: { age: { $gte: 18, $lte: 65 } } }
+    // And combinator
+    { filter: { $and: [{ userId: "user123" }, { status: "active" }] } }
+    ```
+
+**Bounded Autonomy**: ~30 lines to types.rs, ~50 lines to session.rs
+
+**Test Results**: _Awaiting implementation_
+
+---
+
+### Phase 5: Testing & Documentation (Week 6 - 5 days)
+
+End-to-end testing and comprehensive documentation updates.
+
+#### 5.1 Integration Testing (Day 21-23)
+
+**TDD Approach**: Comprehensive E2E tests
+
+- [ ] **Test File**: `bindings/node/test/e2e-crud.test.js` (create, ~400 lines)
+
+  - [ ] Full CRUD workflow:
+    - Create session → Add 10K vectors → Save → Destroy
+    - Create session → Load → Search → Update metadata → Search (verify update) → Delete vectors → Search (verify deletion) → Save → Destroy
+    - Create session → Load → Search with filter → Verify results → Destroy
+  - [ ] Test deletion workflow:
+    - Add 1000 vectors → Delete 100 by ID → Search (verify 900 remain)
+    - Add 1000 vectors → Delete 100 by metadata → Search (verify 900 remain)
+  - [ ] Test update workflow:
+    - Add 1000 vectors → Update 100 metadata → Search → Verify updated metadata
+  - [ ] Test filter workflow:
+    - Add 1000 vectors with varied metadata → Filter by field → Verify correct subset
+  - [ ] Test vacuum workflow:
+    - Add 1000 vectors → Delete 500 → Vacuum → Save → Load → Verify size reduction
+  - [ ] Test concurrent operations:
+    - Multiple sessions with CRUD operations
+  - [ ] Memory leak test:
+    - Repeat CRUD cycle 100 times → Verify memory stable
+
+- [ ] **Test File**: `tests/integration/crud_integration_tests.rs` (create, ~300 lines)
+
+  - [ ] Rust-level E2E tests for CRUD operations
+  - [ ] Test deletion + save + load roundtrip
+  - [ ] Test update + save + load roundtrip
+  - [ ] Test filter + delete + save + load
+  - [ ] Test vacuum efficiency (chunk size reduction)
+
+- [ ] **Run Tests**
+  - [ ] `cd bindings/node && npm test test/e2e-crud.test.js`
+  - [ ] `cargo test --test crud_integration_tests`
+  - [ ] All tests should pass
+
+**Test Results**: _Awaiting implementation_
+
+#### 5.2 Documentation Updates (Day 24-25)
+
+**Documentation updates for v0.2.0**
+
+- [ ] **Modify**: `docs/API.md` (~200 lines added/modified)
+
+  - [ ] Update version to v0.2.0
+  - [ ] Add deletion section:
+    - `DELETE /vectors/{id}` endpoint
+    - `POST /vectors/delete-batch` endpoint
+    - `POST /vectors/delete-by-metadata` endpoint
+  - [ ] Add update section:
+    - `PUT /vectors/{id}/metadata` endpoint
+  - [ ] Update search section with filter examples
+  - [ ] Add filter language documentation
+  - [ ] Add vacuum endpoint (if implemented)
+  - [ ] Update Data Models section with DeleteResult, VacuumStats
+
+- [ ] **Modify**: `docs/sdk-reference/VECTOR_DB_INTEGRATION.md` (~150 lines)
+
+  - [ ] Update Node.js API examples with CRUD operations
+  - [ ] Add deletion examples (deleteVector, deleteByMetadata)
+  - [ ] Add metadata update examples
+  - [ ] Add search with filter examples
+  - [ ] Add best practices for CRUD operations
+  - [ ] Add performance notes for filtering (k_oversample strategy)
+
+- [ ] **Modify**: `README.md` (~50 lines)
+
+  - [ ] Update feature list (add CRUD operations)
+  - [ ] Update quick start with deletion/update examples
+  - [ ] Add v0.2.0 to version history
+
+- [ ] **Create**: `docs/MIGRATION_V0.1.1_TO_V0.2.0.md` (new file, ~200 lines)
+
+  - [ ] Breaking changes summary (manifest v2 → v3)
+  - [ ] New features (deletion, updates, filtering)
+  - [ ] Migration guide:
+    - How to delete vectors
+    - How to update metadata
+    - How to filter searches
+  - [ ] Backward compatibility notes
+  - [ ] Code examples for common migration scenarios
+
+- [ ] **Modify**: `docs/PERFORMANCE_TUNING.md` (~50 lines)
+  - [ ] Add section on filter performance
+  - [ ] k_oversample tuning recommendations
+  - [ ] Vacuum frequency recommendations
+  - [ ] Deletion performance characteristics
+
+**Bounded Autonomy**: ~650 lines total across all documentation files
+
+---
+
+### Phase 6: Optional Polish (Week 7-8 - 8-10 days)
+
+Nice-to-have features that enhance v0.2.0 but are not critical for MVP.
+
+#### 6.1 Schema Validation (Day 26-28)
+
+**TDD Approach**: Write tests for schema definition and validation
+
+- [ ] **Test File**: `tests/unit/schema_validation_tests.rs` (create, ~200 lines)
+
+  - [ ] Test schema definition (fields, types, required)
+  - [ ] Test validation: valid metadata passes
+  - [ ] Test validation: invalid metadata rejected
+  - [ ] Test validation: missing required field rejected
+  - [ ] Test validation: wrong type rejected
+  - [ ] Test schema with nested objects
+  - [ ] Test schema with array fields
+
+- [ ] **Implementation**: `src/core/schema.rs` (create, ~200 lines)
+
+  - [ ] Define `MetadataSchema` struct:
+    ```rust
+    pub struct MetadataSchema {
+        pub fields: HashMap<String, FieldType>,
+        pub required: HashSet<String>,
+    }
+    ```
+  - [ ] Define `FieldType` enum:
+    ```rust
+    pub enum FieldType {
+        String,
+        Number,
+        Boolean,
+        Array(Box<FieldType>),
+        Object(HashMap<String, FieldType>),
+    }
+    ```
+  - [ ] Implement `MetadataSchema::validate(&self, metadata: &serde_json::Value) -> Result<(), SchemaError>`
+    - Check required fields present
+    - Check field types match
+    - Recursively validate nested objects/arrays
+  - [ ] Define `SchemaError` enum (MissingField, InvalidType, etc.)
+
+- [ ] **Implementation**: `bindings/node/src/session.rs` (add ~40 lines)
+
+  - [ ] Add `schema: Option<MetadataSchema>` to session state
+  - [ ] Modify `add_vectors()` to validate metadata if schema present
+  - [ ] Modify `update_metadata()` to validate metadata if schema present
+  - [ ] Add `#[napi]` method `set_schema(&mut self, schema: serde_json::Value) -> Result<()>`
+
+- [ ] **Implementation**: `src/hybrid/persistence.rs` (modify ~20 lines)
+  - [ ] Save schema in manifest v3 (optional field)
+  - [ ] Load schema from manifest on `load_index_chunked()`
+
+**Bounded Autonomy**: ~200 lines schema.rs, ~40 lines session.rs, ~20 lines persistence.rs
+
+**Test Results**: _Awaiting implementation_
+
+#### 6.2 Vacuum API (Day 29-30)
+
+**TDD Approach**: Write tests for manual vacuum operation
+
+- [ ] **Test File**: `bindings/node/test/vacuum.test.js` (create, ~150 lines)
+
+  - [ ] Test vacuum after deletions (returns count)
+  - [ ] Test vacuum with no deletions (returns 0)
+  - [ ] Test vacuum reduces memory usage
+  - [ ] Test vacuum before save reduces manifest size
+  - [ ] Test getStats() before/after vacuum
+
+- [ ] **Implementation**: `bindings/node/src/session.rs` (add ~30 lines)
+
+  - [ ] Add `#[napi]` method `vacuum(&mut self) -> Result<VacuumStats>`
+    - Call `self.index.vacuum()`
+    - Return stats (vectors removed from HNSW, IVF, total)
+  - [ ] Update `getStats()` to include deletion stats
+
+- [ ] **Implementation**: `bindings/node/src/types.rs` (add ~20 lines)
+
+  - [ ] Define `#[napi(object)] VacuumStats` struct:
+    - `hnsw_removed: u32`
+    - `ivf_removed: u32`
+    - `total_removed: u32`
+
+- [ ] **TypeScript Definitions**: `bindings/node/index.d.ts` (auto-generated)
+  - [ ] Verify `vacuum(): Promise<VacuumStats>` is generated
+
+**Bounded Autonomy**: ~30 lines session.rs, ~20 lines types.rs
+
+**Test Results**: _Awaiting implementation_
+
+---
+
+## Success Criteria
+
+**Functional Requirements (MVP - Must Have)**:
+
+- [ ] `deleteVector(id)` removes vectors from index and search results
+- [ ] `deleteByMetadata(filter)` removes matching vectors
+- [ ] `updateMetadata(id, metadata)` updates metadata without re-indexing
+- [ ] `search(query, k, { filter })` filters results by metadata
+- [ ] Deleted vectors persist across save/load cycles
+- [ ] Filter language supports Equals, In, Range, And, Or
+- [ ] Manifest v3 includes deleted_vectors list
+- [ ] Backward compatible: v0.2.0 loads v0.1.1 CIDs (forward-only)
+
+**Functional Requirements (Optional - Nice to Have)**:
+
+- [ ] Schema validation on insert/update
+- [ ] `vacuum()` API for manual cleanup
+- [ ] Vacuum stats in `getStats()`
+
+**Code Quality**:
+
+- [ ] All tests pass (unit + integration + E2E)
+- [ ] Test coverage >80% for new code
+- [ ] All files within max line limits
+- [ ] No clippy warnings
+- [ ] Documentation complete and accurate
+
+**Performance Requirements**:
+
+- [ ] Deletion overhead: <5% impact on search latency
+- [ ] Post-filtering: <10ms overhead for 1000 candidates → 10 results
+- [ ] Metadata updates: <1ms per update
+- [ ] Vacuum: <100ms for 1000 deletions
+
+---
+
+## Risk Mitigation
+
+**Complexity Risk**:
+
+- **Mitigation**: Strict TDD with bounded autonomy (max line counts per file)
+- **Mitigation**: Small sub-phases (<2 days each)
+- **Mitigation**: Copy proven patterns (HNSW deletion → IVF deletion)
+
+**Performance Risk**:
+
+- **Mitigation**: Post-filtering approach (no index changes required)
+- **Mitigation**: k_oversample strategy to maintain result quality
+- **Mitigation**: Benchmark at Phase 5 before finalizing
+
+**Compatibility Risk**:
+
+- **Mitigation**: Manifest version bump (v2 → v3)
+- **Mitigation**: Forward-only compatibility (v0.2.0 reads v0.1.1, not vice versa)
+- **Mitigation**: Migration guide for users
+
+**Architecture Risk**:
+
+- **Mitigation**: Metadata remains separate from indices (no storage redesign)
+- **Mitigation**: Lazy deletion (defer chunk rewriting until save)
+- **Mitigation**: Soft deletion pattern proven in HNSW
+
+---
+
+## Notes & Decisions
+
+### Decision Log
+
+**2025-01-XX**: Chose soft deletion over hard deletion:
+
+- Rationale: Hard deletion requires chunk rewriting (expensive, complex)
+- Approach: Mark as deleted, filter from results, physically remove on save
+- Trade-off: Deleted vectors consume storage until next save
+- Mitigation: Optional `vacuum()` API for manual cleanup
+
+**2025-01-XX**: Chose post-filtering over indexed metadata:
+
+- Rationale: Indexed metadata requires storage redesign (out of scope for v0.2.0)
+- Approach: Filter after vector search using k_oversample strategy
+- Trade-off: Cannot pre-filter before vector search (may load unnecessary chunks)
+- Mitigation: k_oversample = k × 3 (configurable) to maintain result quality
+
+**2025-01-XX**: Chose metadata-only updates (no vector updates):
+
+- Rationale: Vector updates require HNSW graph repair (complex, risky)
+- Approach: Update metadata HashMap only (no index changes)
+- Trade-off: Cannot update vector embeddings after insertion
+- Future: Vector updates deferred to v0.3.0
+
+**2025-01-XX**: Chose manifest v2 → v3 (breaking change):
+
+- Rationale: Need to store deleted_vectors list for persistence
+- Approach: Bump version, add new fields, provide migration guide
+- Trade-off: v0.1.1 cannot read v0.2.0 CIDs
+- Mitigation: Forward-only compatibility acceptable for early versions
+
+### Open Questions
+
+- [ ] Should k_oversample multiplier be configurable? (default: 3)
+
+  - Pro: More control for advanced users
+  - Con: Additional complexity
+
+- [ ] Should vacuum be automatic or manual?
+
+  - Option A: Automatic before every save (simpler, slower saves)
+  - Option B: Manual API (faster saves, user must remember)
+  - Decision: Manual API (MVP), explore auto-vacuum in v0.3.0
+
+- [ ] Should we add updateVector() in v0.2.0? (update embeddings, not just metadata)
+  - Pro: Complete CRUD operations
+  - Con: Requires HNSW graph repair (high complexity, high risk)
+  - Decision: Defer to v0.3.0
+
+### Issues Tracker
+
+_Track blockers and resolutions here_
+
+---
+
+## Estimated Timeline
+
+- **Phase 1**: 5 days (IVF soft deletion)
+- **Phase 2**: 5 days (Node.js deletion API)
+- **Phase 3**: 2-3 days (Metadata updates)
+- **Phase 4**: 8-10 days (Metadata filtering)
+- **Phase 5**: 5 days (Testing & documentation)
+- **Phase 6**: 8-10 days (Optional polish)
+
+**MVP Total (Phases 1-5)**: 25-28 days (~5-6 weeks)
+**Full Total (Phases 1-6)**: 33-38 days (~7-8 weeks)
+
+**Buffer**: Add 20% for unexpected issues → **6-8 weeks total**
+
+**Recommended Approach**: Ship MVP (Phases 1-5) first, iterate on polish (Phase 6) in v0.2.1 based on user feedback.
+
+---
+
+## Related Documents
+
+- `docs/IMPLEMENTATION_CHUNKED.md` - v0.1.1 chunked storage implementation
+- `docs/VECTOR_DB_NODE_BINDINGS.md` - Node.js bindings spec
+- `docs/sdk-reference/VECTOR_DB_INTEGRATION.md` - Integration guide
+- `docs/API.md` - REST API documentation
+- `src/hnsw/operations.rs` - HNSW deletion pattern (reference for IVF)
