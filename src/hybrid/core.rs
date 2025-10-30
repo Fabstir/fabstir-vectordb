@@ -154,6 +154,20 @@ pub struct AgeDistribution {
 }
 
 #[derive(Debug, Clone)]
+pub struct DeleteStats {
+    pub successful: usize,
+    pub failed: usize,
+    pub errors: Vec<(VectorId, String)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VacuumStats {
+    pub hnsw_removed: usize,
+    pub ivf_removed: usize,
+    pub total_removed: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct HybridSearchConfig {
     pub search_recent: bool,
     pub search_historical: bool,
@@ -788,5 +802,129 @@ impl HybridIndex {
             historical_count: Arc::new(RwLock::new(historical_count)),
             chunk_loader,
         })
+    }
+
+    /// Delete a vector from the index (soft deletion)
+    pub async fn delete(&self, id: VectorId) -> Result<(), HybridError> {
+        // Check if vector exists by looking up timestamp
+        let timestamps = self.timestamps.read().await;
+        let timestamp = timestamps
+            .get(&id)
+            .ok_or_else(|| HybridError::IVF(format!("Vector {:?} not found", id)))?;
+
+        // Determine which index the vector is in based on its age
+        let now = Utc::now();
+        let age = now
+            .signed_duration_since(*timestamp)
+            .to_std()
+            .unwrap_or(Duration::from_secs(0));
+
+        drop(timestamps);
+
+        // Delete from appropriate index
+        if age < self.config.recent_threshold {
+            // Delete from HNSW (recent)
+            let mut recent = self.recent_index.write().await;
+            recent
+                .mark_deleted(&id)
+                .map_err(|e| HybridError::HNSW(e.to_string()))?;
+        } else {
+            // Delete from IVF (historical)
+            let mut historical = self.historical_index.write().await;
+            historical
+                .mark_deleted(&id)
+                .map_err(|e| HybridError::IVF(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Check if a vector is marked as deleted
+    pub async fn is_deleted(&self, id: &VectorId) -> bool {
+        // Check if vector exists in timestamps
+        let timestamps = self.timestamps.read().await;
+        if let Some(timestamp) = timestamps.get(id) {
+            // Determine which index to check
+            let now = Utc::now();
+            let age = now
+                .signed_duration_since(*timestamp)
+                .to_std()
+                .unwrap_or(Duration::from_secs(0));
+
+            drop(timestamps);
+
+            if age < self.config.recent_threshold {
+                // Check HNSW
+                let recent = self.recent_index.read().await;
+                recent.is_deleted(id)
+            } else {
+                // Check IVF
+                let historical = self.historical_index.read().await;
+                historical.is_deleted(id)
+            }
+        } else {
+            // Vector doesn't exist, so it's not deleted
+            false
+        }
+    }
+
+    /// Delete multiple vectors (batch operation)
+    pub async fn batch_delete(&self, ids: &[VectorId]) -> Result<DeleteStats, HybridError> {
+        let mut stats = DeleteStats {
+            successful: 0,
+            failed: 0,
+            errors: Vec::new(),
+        };
+
+        for id in ids {
+            match self.delete(id.clone()).await {
+                Ok(_) => stats.successful += 1,
+                Err(e) => {
+                    stats.failed += 1;
+                    stats.errors.push((id.clone(), e.to_string()));
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// Physically remove deleted vectors from both indices
+    pub async fn vacuum(&self) -> Result<VacuumStats, HybridError> {
+        // Vacuum HNSW index
+        let mut recent = self.recent_index.write().await;
+        let hnsw_removed = recent
+            .vacuum()
+            .map_err(|e| HybridError::HNSW(e.to_string()))?;
+        drop(recent);
+
+        // Vacuum IVF index
+        let mut historical = self.historical_index.write().await;
+        let ivf_removed = historical
+            .vacuum()
+            .map_err(|e| HybridError::IVF(e.to_string()))?;
+        drop(historical);
+
+        let total_removed = hnsw_removed + ivf_removed;
+
+        Ok(VacuumStats {
+            hnsw_removed,
+            ivf_removed,
+            total_removed,
+        })
+    }
+
+    /// Get count of active (non-deleted) vectors
+    pub async fn active_count(&self) -> usize {
+        // Get active count from both indices
+        let recent = self.recent_index.read().await;
+        let recent_active = recent.active_count();
+        drop(recent);
+
+        let historical = self.historical_index.read().await;
+        let historical_active = historical.active_count();
+        drop(historical);
+
+        recent_active + historical_active
     }
 }

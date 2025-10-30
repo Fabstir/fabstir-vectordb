@@ -2,5 +2,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 mod core;
+mod deletion;
 mod maintenance;
 mod search_integration;
