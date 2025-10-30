@@ -26,7 +26,7 @@ pub enum ChunkError {
 }
 
 /// Current manifest version
-pub const MANIFEST_VERSION: u32 = 2;
+pub const MANIFEST_VERSION: u32 = 3;
 
 // ============================================================================
 // VectorChunk - Storage unit for vectors
@@ -240,6 +240,11 @@ pub struct Manifest {
     pub chunks: Vec<ChunkMetadata>,
     pub hnsw_structure: Option<HNSWManifest>,
     pub ivf_structure: Option<IVFManifest>,
+
+    /// List of soft-deleted vector IDs (v3+)
+    /// These vectors are marked as deleted but not physically removed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_vectors: Option<Vec<String>>,
 }
 
 impl Manifest {
@@ -252,6 +257,7 @@ impl Manifest {
             chunks: Vec::new(),
             hnsw_structure: None,
             ivf_structure: None,
+            deleted_vectors: None,
         }
     }
 

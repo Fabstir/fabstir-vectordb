@@ -326,36 +326,65 @@ Expose deletion operations through Node.js bindings.
 
 **TDD Approach**: Write integration tests for save/load with deletions
 
-- [ ] **Test File**: `tests/integration/deletion_persistence_tests.rs` (create, ~200 lines)
+- [x] **Test File**: `tests/hybrid/deletion_persistence.rs` (created, 360 lines)
 
-  - [ ] Test save index with deleted vectors (manifest includes tombstones)
-  - [ ] Test load index with deleted vectors (skips deleted IDs)
-  - [ ] Test manifest v3 format (version field, deleted_vectors list)
-  - [ ] Test backward compatibility: load v2 manifest (no deleted_vectors)
-  - [ ] Test forward compatibility: v2 code rejects v3 manifest
-  - [ ] Test vacuum before save (reduces tombstone list)
-  - [ ] Test deleted vectors excluded after load + search
+  - [x] Test save index with deleted vectors (manifest includes tombstones)
+  - [x] Test load index with deleted vectors (skips deleted IDs)
+  - [x] Test manifest v3 format (version field, deleted_vectors list)
+  - [x] Test backward compatibility: load v2 manifest (no deleted_vectors)
+  - [x] Test forward compatibility: v3 code rejects v4+ manifest
+  - [x] Test vacuum before save (reduces tombstone list)
+  - [x] Test deleted vectors excluded after load + search
+  - [x] Test active_count after load (counts exclude deleted vectors)
 
-- [ ] **Implementation**: `src/core/chunk.rs` (modify Manifest struct)
+- [x] **Implementation**: `src/core/chunk.rs` (modified ~10 lines)
 
-  - [ ] Bump `MANIFEST_VERSION` from 2 to 3
-  - [ ] Add `deleted_vectors: Option<Vec<String>>` to `Manifest` struct
-  - [ ] Update JSON serialization to include new field
-  - [ ] Add validation: reject versions > 3
+  - [x] Bump `MANIFEST_VERSION` from 2 to 3
+  - [x] Add `deleted_vectors: Option<Vec<String>>` to `Manifest` struct with serde attributes
+  - [x] Update `Manifest::new()` to initialize deleted_vectors field
+  - [x] JSON serialization automatically includes new field (via serde)
 
-- [ ] **Implementation**: `src/hybrid/persistence.rs` (modify ~60 lines)
+- [x] **Implementation**: `src/hybrid/core.rs` (added ~25 lines, lines 931-954)
 
-  - [ ] Modify `save_index_chunked()` to include deleted vectors in manifest
-    - Extract deleted IDs from HNSW and IVF indices
-    - Add to manifest.deleted_vectors
-  - [ ] Modify `load_index_chunked()` to skip deleted vectors
-    - Read manifest.deleted_vectors
-    - After loading chunks, mark vectors as deleted in indices
-    - Verify deleted vectors are excluded from search
+  - [x] Add `get_deleted_vectors()` method to HybridIndex
+  - [x] Collects deleted IDs from both HNSW (via nodes) and IVF (via deleted set)
+  - [x] Returns Vec<String> of VectorId string representations
 
-**Bounded Autonomy**: ~30 lines to chunk.rs, ~60 lines to persistence.rs
+- [x] **Implementation**: `src/ivf/operations.rs` (added ~5 lines, lines 619-622)
 
-**Test Results**: _Awaiting implementation_
+  - [x] Add `get_deleted_ids()` helper method
+  - [x] Returns iterator over deleted HashSet for persistence
+
+- [x] **Implementation**: `src/hybrid/persistence.rs` (modified ~30 lines)
+
+  - [x] Modify `save_index_chunked()` to include deleted vectors in manifest
+    - Calls `index.get_deleted_vectors().await`
+    - Sets `manifest.deleted_vectors` if non-empty
+    - Lines 231-235
+  - [x] Modify `load_index_chunked()` to restore deleted vectors
+    - Updated signature to accept `config: HybridConfig` parameter
+    - Reads `manifest.deleted_vectors` from manifest v3+
+    - After index reconstruction, marks vectors as deleted
+    - Lines 494, 679-686
+  - [x] Uses passed config instead of metadata.config for flexibility
+
+- [x] **Test Infrastructure**: Created `tests/test_deletion_persistence.rs` (6 lines)
+  - Standalone test file to avoid compile errors in other test modules
+  - Allows deletion persistence tests to run independently
+
+**Bounded Autonomy**: ✅ ~10 lines to chunk.rs, ~30 lines to persistence.rs, ~30 lines to hybrid/core.rs, ~5 lines to ivf/operations.rs (within targets)
+
+**Test Results**: ✅ All 8 tests passing
+```
+✓ test_save_index_with_deleted_vectors
+✓ test_load_index_with_deleted_vectors
+✓ test_deleted_vectors_excluded_from_search
+✓ test_manifest_v3_format
+✓ test_backward_compatibility_v2_manifest
+✓ test_forward_compatibility_reject_future_versions
+✓ test_vacuum_before_save_reduces_tombstones
+✓ test_active_count_after_load
+```
 
 ---
 

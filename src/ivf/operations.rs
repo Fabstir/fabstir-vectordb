@@ -616,6 +616,11 @@ impl IVFIndex {
         self.total_vectors - self.deleted.len()
     }
 
+    /// Get all deleted vector IDs (for persistence)
+    pub fn get_deleted_ids(&self) -> Vec<&VectorId> {
+        self.deleted.iter().collect()
+    }
+
     /// Physically remove deleted vectors from inverted lists (hard deletion)
     pub fn vacuum(&mut self) -> Result<usize, OperationError> {
         let deleted_ids = self.deleted.clone();

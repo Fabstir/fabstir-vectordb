@@ -3,5 +3,6 @@
 
 mod core;
 mod deletion;
+mod deletion_persistence;
 mod maintenance;
 mod search_integration;
