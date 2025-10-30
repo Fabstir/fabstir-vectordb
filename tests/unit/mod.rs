@@ -3,3 +3,4 @@
 
 pub mod chunk_tests;
 pub mod chunk_cache_tests;
+pub mod ivf_deletion_tests;

@@ -7,7 +7,7 @@ use crate::storage::chunk_loader::ChunkLoader;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
 
@@ -163,6 +163,8 @@ pub struct IVFIndex {
     pub(crate) chunk_loader: Option<Arc<ChunkLoader>>,
     /// Cache for lazy-loaded vectors (vector_id -> vector)
     pub(crate) vector_cache: Arc<RwLock<HashMap<VectorId, Vec<f32>>>>,
+    /// Set of deleted vector IDs (soft deletion)
+    pub(crate) deleted: HashSet<VectorId>,
 }
 
 impl IVFIndex {
@@ -186,6 +188,7 @@ impl IVFIndex {
             total_vectors: 0,
             chunk_loader: None,
             vector_cache: Arc::new(RwLock::new(HashMap::new())),
+            deleted: HashSet::new(),
         }
     }
 
@@ -210,6 +213,7 @@ impl IVFIndex {
             total_vectors: 0,
             chunk_loader,
             vector_cache: Arc::new(RwLock::new(HashMap::new())),
+            deleted: HashSet::new(),
         }
     }
 
@@ -647,6 +651,11 @@ impl IVFIndex {
             let cluster_vectors = self.get_cluster_vectors(cluster_id).await?;
 
             for (id, vector) in cluster_vectors {
+                // Skip deleted vectors
+                if self.is_deleted(&id) {
+                    continue;
+                }
+
                 let distance = euclidean_distance_scalar(query, &vector);
                 results.push(SearchResult::new(id, distance, None));
             }

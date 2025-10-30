@@ -49,8 +49,8 @@ session-123/
 
 ## Current Status
 
-- ⏳ Phase 1: IVF Soft Deletion (0%)
-  - ⏳ Phase 1.1: IVF Deletion Operations (0%)
+- ⏳ Phase 1: IVF Soft Deletion (50%)
+  - ✅ Phase 1.1: IVF Deletion Operations (100% - Complete)
   - ⏳ Phase 1.2: Hybrid Index Deletion Integration (0%)
 - ⏳ Phase 2: Node.js Deletion API (0%)
   - ⏳ Phase 2.1: deleteVector Implementation (0%)
@@ -76,52 +76,66 @@ session-123/
 
 Add deletion support to IVF index by copying HNSW's soft deletion pattern.
 
-#### 1.1 IVF Deletion Operations (Day 1-2)
+#### 1.1 IVF Deletion Operations (Day 1-2) ✅ Complete
 
 **TDD Approach**: Write tests first, then implement
 
-- [ ] **Test File**: `tests/unit/ivf_deletion_tests.rs` (create, ~200 lines)
+- [x] **Test File**: `tests/unit/ivf_deletion_tests.rs` (created, 221 lines)
 
-  - [ ] Test `mark_deleted()` marks vector as deleted
-  - [ ] Test `is_deleted()` returns true for deleted vectors
-  - [ ] Test `batch_delete()` marks multiple vectors
-  - [ ] Test deleted vectors excluded from search
-  - [ ] Test `vacuum()` physically removes deleted vectors
-  - [ ] Test `active_count()` excludes deleted vectors
-  - [ ] Test deletion of vector in multiple clusters (error handling)
-  - [ ] Test deletion of non-existent vector (error handling)
+  - [x] Test `mark_deleted()` marks vector as deleted
+  - [x] Test `is_deleted()` returns true for deleted vectors
+  - [x] Test `batch_delete()` marks multiple vectors
+  - [x] Test deleted vectors excluded from search
+  - [x] Test `vacuum()` physically removes deleted vectors
+  - [x] Test `active_count()` excludes deleted vectors
+  - [x] Test deletion of same vector twice (edge case)
+  - [x] Test deletion of non-existent vector (error handling)
 
-- [ ] **Implementation**: `src/ivf/operations.rs` (modify, add ~150 lines)
+- [x] **Implementation**: `src/ivf/operations.rs` (modified, added ~90 lines)
 
-  - [ ] Add `deleted: HashSet<VectorId>` field to `IVFIndex` struct
-  - [ ] Implement `mark_deleted(&mut self, id: &VectorId) -> Result<(), IVFError>`
-    - Add vector ID to deleted set
-    - Return error if vector not found
-  - [ ] Implement `is_deleted(&self, id: &VectorId) -> bool`
-    - Check if ID is in deleted set
-  - [ ] Implement `batch_delete(&mut self, ids: &[VectorId]) -> Result<usize, OperationError>`
-    - Mark multiple vectors as deleted
-    - Return count of successfully deleted vectors
-  - [ ] Modify `search()` to skip deleted vectors (lines ~120-180)
-    - After finding candidates, filter out deleted IDs
-  - [ ] Implement `vacuum(&mut self) -> Result<usize, OperationError>`
-    - Iterate through inverted lists
-    - Remove vectors that are marked deleted
-    - Clear deleted set
-    - Return count of physically removed vectors
-  - [ ] Implement `active_count(&self) -> usize`
-    - Return total vectors minus deleted count
+  - [x] Add `BatchDeleteResult` struct (lines 30-35)
+  - [x] Implement `mark_deleted(&mut self, id: &VectorId) -> Result<(), IVFError)` (lines 568-586)
+    - Checks if vector exists in any inverted list
+    - Adds vector ID to deleted set
+    - Returns error if vector not found
+  - [x] Implement `is_deleted(&self, id: &VectorId) -> bool` (lines 588-591)
+    - Checks if ID is in deleted set
+  - [x] Implement `batch_delete(&mut self, ids: &[VectorId]) -> Result<BatchDeleteResult, OperationError>` (lines 593-612)
+    - Marks multiple vectors as deleted
+    - Returns result with successful/failed counts and errors
+  - [x] Implement `active_count(&self) -> usize` (lines 614-617)
+    - Returns total vectors minus deleted count
+  - [x] Implement `vacuum(&mut self) -> Result<usize, OperationError>` (lines 619-639)
+    - Removes deleted vectors from inverted lists
+    - Updates total vector count
+    - Clears deleted set
+    - Returns count of physically removed vectors
 
-- [ ] **Modify**: `src/ivf/core.rs` (add field, update constructor)
-  - [ ] Add `deleted: HashSet<VectorId>` to struct (line ~40)
-  - [ ] Initialize in `new()` constructor
-  - [ ] Update `from_trained()` to include deleted set
+- [x] **Modify**: `src/ivf/core.rs` (added ~10 lines)
+  - [x] Added `HashSet` to imports (line 10)
+  - [x] Add `deleted: HashSet<VectorId>` to IVFIndex struct (line 167)
+  - [x] Initialize in `new()` constructor (line 191)
+  - [x] Initialize in `with_chunk_loader()` constructor (line 216)
+  - [x] Modified `search_with_config()` to skip deleted vectors (lines 654-657)
 
-**Bounded Autonomy**: Target ~150 lines added to operations.rs, ~20 lines to core.rs
+- [x] **Modify**: `tests/unit/mod.rs` (added 1 line)
+  - [x] Added `pub mod ivf_deletion_tests;` (line 6)
 
-**Reference**: `src/hnsw/operations.rs:127-200` (existing HNSW deletion pattern to copy)
+**Bounded Autonomy**: ✅ 90 lines operations.rs + 10 lines core.rs + 221 lines tests = 321 lines (within limits)
 
-**Test Results**: _Awaiting implementation_
+**Reference**: `src/hnsw/operations.rs:127-200` (existing HNSW deletion pattern copied)
+
+**Test Results**: ✅ All 8 tests passing
+```
+test unit::ivf_deletion_tests::test_active_count ... ok
+test unit::ivf_deletion_tests::test_batch_delete ... ok
+test unit::ivf_deletion_tests::test_delete_nonexistent_vector ... ok
+test unit::ivf_deletion_tests::test_delete_same_vector_twice ... ok
+test unit::ivf_deletion_tests::test_is_deleted ... ok
+test unit::ivf_deletion_tests::test_mark_deleted ... ok
+test unit::ivf_deletion_tests::test_search_excludes_deleted ... ok
+test unit::ivf_deletion_tests::test_vacuum ... ok
+```
 
 #### 1.2 Hybrid Index Deletion Integration (Day 3)
 
