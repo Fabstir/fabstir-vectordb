@@ -18,7 +18,7 @@ use vector_db::{
 
 use crate::{
     error::VectorDBError,
-    types::{LoadOptions, SearchOptions, SearchResult, SessionStats, VectorDBConfig, VectorInput},
+    types::{DeleteResult, LoadOptions, SearchOptions, SearchResult, SessionStats, VectorDBConfig, VectorInput},
     utils,
 };
 
@@ -359,6 +359,90 @@ impl VectorDBSession {
         Ok(())
     }
 
+    /// Delete vectors by metadata filter
+    ///
+    /// Scans all vectors and deletes those whose metadata matches the filter.
+    /// Supports:
+    /// - Simple field matching: { "userId": "user123" }
+    /// - Multiple fields (AND logic): { "userId": "user123", "status": "active" }
+    /// - Nested field access with dot notation: { "user.id": "123" }
+    /// - Array field matching: { "tags": "ai" } (checks if value is in array)
+    ///
+    /// # Arguments
+    /// * `filter` - JSON object with fields to match
+    ///
+    /// # Returns
+    /// DeleteResult containing count of deleted vectors and their IDs
+    ///
+    /// # Errors
+    /// Returns error if session has been destroyed
+    #[napi]
+    pub async unsafe fn delete_by_metadata(&mut self, filter: serde_json::Value) -> Result<DeleteResult> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Get metadata map
+        let metadata_map = state.metadata.clone();
+        let metadata_guard = metadata_map.read().await;
+
+        // Find all vectors matching the filter
+        // Store both the VectorId hash key AND the original user ID
+        let mut matching_vectors: Vec<(String, String)> = Vec::new(); // (vector_id_hash, original_id)
+        for (vector_id_str, metadata) in metadata_guard.iter() {
+            if matches_filter(metadata, &filter) {
+                // Extract original ID from metadata
+                if let Some(serde_json::Value::String(original_id)) = metadata.get("_originalId") {
+                    matching_vectors.push((vector_id_str.clone(), original_id.clone()));
+                } else {
+                    // Fallback: use the vector_id_str directly (shouldn't happen)
+                    matching_vectors.push((vector_id_str.clone(), vector_id_str.clone()));
+                }
+            }
+        }
+        drop(metadata_guard);
+
+        // Convert original IDs to VectorIds for deletion
+        let vector_ids: Vec<VectorId> = matching_vectors
+            .iter()
+            .map(|(_, original_id)| VectorId::from_string(original_id))
+            .collect();
+
+        // Batch delete from index
+        let index = state.index.clone();
+        let index_guard = index.write().await;
+
+        let delete_stats = index_guard.batch_delete(&vector_ids)
+            .await
+            .map_err(|e| VectorDBError::index_error(format!("Failed to batch delete: {}", e)))?;
+
+        drop(index_guard);
+
+        // Remove from metadata HashMap (only successfully deleted ones)
+        // Only process the first 'successful' count from matching_vectors
+        let successfully_deleted: Vec<(String, String)> = matching_vectors
+            .iter()
+            .take(delete_stats.successful)
+            .cloned()
+            .collect();
+
+        let mut metadata_guard = metadata_map.write().await;
+        for (vector_id_hash, _) in &successfully_deleted {
+            metadata_guard.remove(vector_id_hash);
+        }
+        drop(metadata_guard);
+
+        // Return the original user-provided IDs (not the VectorId hashes)
+        let deleted_ids: Vec<String> = successfully_deleted
+            .iter()
+            .map(|(_, original_id)| original_id.clone())
+            .collect();
+
+        Ok(DeleteResult {
+            deleted_count: delete_stats.successful as u32,
+            deleted_ids,
+        })
+    }
+
     /// Save index to S5 using chunked storage format
     #[napi]
     pub async fn save_to_s5(&self) -> Result<String> {
@@ -437,6 +521,73 @@ impl VectorDBSession {
 
         Ok(())
     }
+}
+
+/// Check if metadata matches the given filter
+///
+/// Supports:
+/// - Simple field matching: { "userId": "user123" }
+/// - Multiple fields (AND logic): All fields must match
+/// - Nested field access with dot notation: { "user.id": "123" }
+/// - Array field matching: { "tags": "ai" } checks if "ai" is in the array
+fn matches_filter(metadata: &serde_json::Value, filter: &serde_json::Value) -> bool {
+    // If filter is not an object, no match
+    let filter_obj = match filter.as_object() {
+        Some(obj) => obj,
+        None => return false,
+    };
+
+    // Empty filter matches all (or none for safety - let's match all)
+    if filter_obj.is_empty() {
+        return true;
+    }
+
+    // Check each filter field (AND logic)
+    for (key, filter_value) in filter_obj.iter() {
+        let metadata_value = get_field_value(metadata, key);
+
+        match metadata_value {
+            Some(value) => {
+                // Check if values match
+                if !values_match(value, filter_value) {
+                    return false; // One field doesn't match, so overall no match
+                }
+            }
+            None => return false, // Field not found in metadata
+        }
+    }
+
+    true // All fields matched
+}
+
+/// Get field value from metadata, supporting dot notation for nested access
+fn get_field_value<'a>(metadata: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    // Check if path contains dots (nested access)
+    if path.contains('.') {
+        let parts: Vec<&str> = path.split('.').collect();
+        let mut current = metadata;
+
+        for part in parts {
+            current = current.get(part)?;
+        }
+
+        Some(current)
+    } else {
+        // Simple field access
+        metadata.get(path)
+    }
+}
+
+/// Check if two JSON values match
+/// Special case: if metadata value is an array, check if filter value is in the array
+fn values_match(metadata_value: &serde_json::Value, filter_value: &serde_json::Value) -> bool {
+    // If metadata value is an array, check if filter value is in the array
+    if let Some(arr) = metadata_value.as_array() {
+        return arr.contains(filter_value);
+    }
+
+    // Otherwise, exact equality check
+    metadata_value == filter_value
 }
 
 // Ensure cleanup on drop

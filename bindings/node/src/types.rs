@@ -93,3 +93,12 @@ pub struct SessionStats {
     /// Vectors in IVF index
     pub ivf_vector_count: Option<u32>,
 }
+
+#[napi(object)]
+pub struct DeleteResult {
+    /// Number of vectors successfully deleted
+    pub deleted_count: u32,
+
+    /// IDs of deleted vectors
+    pub deleted_ids: Vec<String>,
+}

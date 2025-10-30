@@ -63,6 +63,12 @@ export interface SessionStats {
   /** Vectors in IVF index */
   ivfVectorCount?: number;
 }
+export interface DeleteResult {
+  /** Number of vectors successfully deleted */
+  deletedCount: number;
+  /** IDs of deleted vectors */
+  deletedIds: Array<string>;
+}
 export declare function getVersion(): string;
 export declare function getPlatformInfo(): PlatformInfo;
 export interface PlatformInfo {
@@ -106,6 +112,26 @@ export declare class VectorDbSession {
    * - Session has been destroyed
    */
   deleteVector(id: string): Promise<void>;
+  /**
+   * Delete vectors by metadata filter
+   *
+   * Scans all vectors and deletes those whose metadata matches the filter.
+   * Supports:
+   * - Simple field matching: { "userId": "user123" }
+   * - Multiple fields (AND logic): { "userId": "user123", "status": "active" }
+   * - Nested field access with dot notation: { "user.id": "123" }
+   * - Array field matching: { "tags": "ai" } (checks if value is in array)
+   *
+   * # Arguments
+   * * `filter` - JSON object with fields to match
+   *
+   * # Returns
+   * DeleteResult containing count of deleted vectors and their IDs
+   *
+   * # Errors
+   * Returns error if session has been destroyed
+   */
+  deleteByMetadata(filter: any): Promise<DeleteResult>;
   /** Save index to S5 using chunked storage format */
   saveToS5(): Promise<string>;
   /** Get session statistics */
