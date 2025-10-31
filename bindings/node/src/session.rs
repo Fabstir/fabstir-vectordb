@@ -212,9 +212,23 @@ impl VectorDBSession {
         // Convert f64 to f32 for Rust
         let query_f32 = utils::js_array_to_vec_f32(query_vector);
 
+        // Validate query vector dimension
+        if let Some(expected_dim) = state.vector_dimension {
+            let actual_dim = query_f32.len();
+            if actual_dim != expected_dim {
+                return Err(VectorDBError::invalid_input(
+                    format!("Query vector dimension mismatch: expected {} dimensions, got {}", expected_dim, actual_dim)
+                ).into());
+            }
+        }
+
         let threshold = options.as_ref()
             .and_then(|o| o.threshold)
             .unwrap_or(0.7) as f32; // Convert to f32 for comparison
+
+        let include_vectors = options.as_ref()
+            .and_then(|o| o.include_vectors)
+            .unwrap_or(false);
 
         // Extract and parse filter from options
         let filter = if let Some(filter_json) = options.as_ref().and_then(|o| o.filter.as_ref()) {
@@ -248,14 +262,33 @@ impl VectorDBSession {
                 .await
                 .map_err(|e| VectorDBError::index_error(format!("Search failed: {}", e)))?
         };
+
+        // Collect vectors if includeVectors is requested
+        let mut vectors_map: std::collections::HashMap<String, Vec<f32>> = std::collections::HashMap::new();
+        if include_vectors {
+            let hnsw_index = index.get_recent_index().await;
+            let ivf_index = index.get_historical_index().await;
+
+            for result in &results {
+                let vector_id = &result.vector_id;
+                if let Some(vec_f32) = hnsw_index.get_vector_by_id(vector_id) {
+                    vectors_map.insert(vector_id.to_string(), vec_f32.clone());
+                }
+                else if let Some(vec_f32) = ivf_index.get_vector_by_id(vector_id) {
+                    vectors_map.insert(vector_id.to_string(), vec_f32.clone());
+                }
+            }
+        }
         drop(index); // Release read lock
 
         // Convert results to SearchResult format
         let search_results: Vec<SearchResult> = results
             .into_iter()
             .filter(|r| {
-                // Convert distance to similarity score (1 - distance) and filter by threshold
-                let score = 1.0 - r.distance;
+                // Convert Euclidean distance to similarity score in [0, 1] range
+                // Using formula: similarity = 1 / (1 + distance)
+                // This maps distance=0 → similarity=1, and distance=∞ → similarity=0
+                let score = 1.0 / (1.0 + r.distance);
                 score >= threshold
             })
             .map(|r| {
@@ -279,14 +312,22 @@ impl VectorDBSession {
                     }
                     id
                 } else {
-                    vector_id_str
+                    vector_id_str.clone()
+                };
+
+                // Include vector data if requested
+                let vector = if include_vectors {
+                    vectors_map.get(&vector_id_str)
+                        .map(|vec_f32| utils::vec_f32_to_js_array(vec_f32.clone()))
+                } else {
+                    None
                 };
 
                 SearchResult {
                     id: result_id,
-                    score: (1.0 - r.distance) as f64, // Convert distance to similarity score
+                    score: (1.0 / (1.0 + r.distance)) as f64, // Convert distance to similarity score
                     metadata,
-                    vector: None, // TODO: Add vector inclusion based on options
+                    vector,
                 }
             })
             .collect();

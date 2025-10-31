@@ -549,6 +549,18 @@ impl IVFIndex {
             .collect()
     }
 
+    /// Get a specific vector by ID (searches all clusters)
+    pub fn get_vector_by_id(&self, vector_id: &VectorId) -> Option<Vec<f32>> {
+        // Search through all inverted lists to find the vector
+        for list in self.inverted_lists.values() {
+            if let Some(vector) = list.vectors.get(vector_id) {
+                return Some(vector.clone());
+            }
+        }
+        // Also check the vector cache (for lazy-loaded vectors)
+        self.vector_cache.read().unwrap().get(vector_id).cloned()
+    }
+
     /// Get all vectors for a specific cluster (lazy loads from chunks if needed)
     pub async fn get_cluster_vectors(&self, cluster_id: ClusterId) -> Result<Vec<(VectorId, Vec<f32>)>, IVFError> {
         let list = self.inverted_lists.get(&cluster_id)

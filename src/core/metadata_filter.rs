@@ -42,11 +42,13 @@ pub enum MetadataFilter {
         values: Vec<JsonValue>,
     },
 
-    /// Range query: `{ "age": { "$gte": 18, "$lte": 65 } }`
+    /// Range query: `{ "age": { "$gte": 18, "$lte": 65 } }` or `{ "score": { "$gt": 40, "$lt": 100 } }`
     Range {
         field: String,
         min: Option<f64>,
         max: Option<f64>,
+        min_inclusive: bool, // true for $gte, false for $gt
+        max_inclusive: bool, // true for $lte, false for $lt
     },
 
     /// All sub-filters must match: `{ "$and": [filter1, filter2] }`
@@ -160,20 +162,43 @@ impl MetadataFilter {
                     return Self::parse_in(field, in_values);
                 }
 
-                // Check for range operators
-                let min = ops.get("$gte").and_then(|v| v.as_f64());
-                let max = ops.get("$lte").and_then(|v| v.as_f64());
+                // Check for range operators ($gte, $gt, $lte, $lt)
+                let min_gte = ops.get("$gte").and_then(|v| v.as_f64());
+                let min_gt = ops.get("$gt").and_then(|v| v.as_f64());
+                let max_lte = ops.get("$lte").and_then(|v| v.as_f64());
+                let max_lt = ops.get("$lt").and_then(|v| v.as_f64());
 
-                if min.is_some() || max.is_some() {
-                    if min.is_none() && max.is_none() {
+                // Determine min bound and inclusivity
+                let (min, min_inclusive) = match (min_gte, min_gt) {
+                    (Some(gte), Some(gt)) => {
                         return Err(FilterError::InvalidSyntax(
-                            "Range filter must have at least $gte or $lte".to_string(),
+                            "Cannot use both $gte and $gt in the same range filter".to_string(),
                         ));
                     }
+                    (Some(gte), None) => (Some(gte), true),
+                    (None, Some(gt)) => (Some(gt), false),
+                    (None, None) => (None, true), // default to inclusive
+                };
+
+                // Determine max bound and inclusivity
+                let (max, max_inclusive) = match (max_lte, max_lt) {
+                    (Some(lte), Some(lt)) => {
+                        return Err(FilterError::InvalidSyntax(
+                            "Cannot use both $lte and $lt in the same range filter".to_string(),
+                        ));
+                    }
+                    (Some(lte), None) => (Some(lte), true),
+                    (None, Some(lt)) => (Some(lt), false),
+                    (None, None) => (None, true), // default to inclusive
+                };
+
+                if min.is_some() || max.is_some() {
                     return Ok(MetadataFilter::Range {
                         field: field.to_string(),
                         min,
                         max,
+                        min_inclusive,
+                        max_inclusive,
                     });
                 }
 
@@ -182,7 +207,9 @@ impl MetadataFilter {
                     if key.starts_with('$')
                         && key != "$in"
                         && key != "$gte"
+                        && key != "$gt"
                         && key != "$lte"
+                        && key != "$lt"
                     {
                         return Err(FilterError::UnsupportedOperator(key.clone()));
                     }
@@ -263,11 +290,23 @@ impl MetadataFilter {
                 }
             }
 
-            MetadataFilter::Range { field, min, max } => {
+            MetadataFilter::Range { field, min, max, min_inclusive, max_inclusive } => {
                 if let Some(field_value) = get_field(metadata, field) {
                     if let Some(num) = field_value.as_f64() {
-                        let min_ok = min.map_or(true, |m| num >= m);
-                        let max_ok = max.map_or(true, |m| num <= m);
+                        let min_ok = min.map_or(true, |m| {
+                            if *min_inclusive {
+                                num >= m  // $gte
+                            } else {
+                                num > m   // $gt
+                            }
+                        });
+                        let max_ok = max.map_or(true, |m| {
+                            if *max_inclusive {
+                                num <= m  // $lte
+                            } else {
+                                num < m   // $lt
+                            }
+                        });
                         min_ok && max_ok
                     } else {
                         false
@@ -402,6 +441,8 @@ mod tests {
             field: "age".to_string(),
             min: Some(18.0),
             max: Some(65.0),
+            min_inclusive: true,
+            max_inclusive: true,
         };
 
         let metadata_25 = json!({"age": 25});
@@ -450,6 +491,8 @@ mod tests {
                 field: "priority".to_string(),
                 min: Some(8.0),
                 max: None,
+                min_inclusive: true,
+                max_inclusive: true,
             },
         ]);
 

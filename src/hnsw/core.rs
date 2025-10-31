@@ -204,6 +204,10 @@ impl HNSWIndex {
         self.nodes.read().unwrap().get(id).cloned()
     }
 
+    pub fn get_vector_by_id(&self, id: &VectorId) -> Option<Vec<f32>> {
+        self.nodes.read().unwrap().get(id).map(|node| node.vector.clone())
+    }
+
     pub fn assign_level(&self) -> usize {
         let mut rng = self.rng.write().unwrap();
 
@@ -443,9 +447,20 @@ impl HNSWIndex {
             }
         }
 
-        // Return top k results
-        nearest.truncate(k);
-        Ok(nearest
+        // Filter out soft-deleted nodes and return top k results
+        let nodes = self.nodes.read().unwrap();
+        let filtered_results: Vec<SearchCandidate> = nearest
+            .into_iter()
+            .filter(|c| {
+                // Check if the node is deleted
+                nodes.get(&c.id)
+                    .map(|node| !node.is_deleted())
+                    .unwrap_or(false) // If node not found, exclude it
+            })
+            .take(k) // Take only k results after filtering
+            .collect();
+
+        Ok(filtered_results
             .into_iter()
             .map(|c| SearchResult::new(c.id, c.distance, None))
             .collect())
