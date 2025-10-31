@@ -3,6 +3,7 @@
 
 /// Chunk types for chunked vector storage with lazy loading
 use crate::core::types::VectorId;
+use crate::core::schema::MetadataSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -245,6 +246,11 @@ pub struct Manifest {
     /// These vectors are marked as deleted but not physically removed
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted_vectors: Option<Vec<String>>,
+
+    /// Optional metadata schema for validation (v3+)
+    /// If present, all metadata operations will be validated against this schema
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<MetadataSchema>,
 }
 
 impl Manifest {
@@ -258,6 +264,7 @@ impl Manifest {
             hnsw_structure: None,
             ivf_structure: None,
             deleted_vectors: None,
+            schema: None,
         }
     }
 

@@ -173,6 +173,27 @@ export declare class VectorDbSession {
   saveToS5(): Promise<string>;
   /** Get session statistics */
   getStats(): Promise<SessionStats>;
+  /**
+   * Set metadata schema for validation (v0.2.0 - Phase 6.1)
+   *
+   * Once set, all metadata in add_vectors() and update_metadata() will be validated
+   * against this schema. Pass null/undefined to disable schema validation.
+   *
+   * Schema format:
+   * ```javascript
+   * {
+   *   fields: {
+   *     title: { type: "string" },
+   *     views: { type: "number" },
+   *     published: { type: "boolean" },
+   *     tags: { type: "array", items: { type: "string" } },
+   *     author: { type: "object", fields: { name: { type: "string" } } }
+   *   },
+   *   required: ["title", "views"]
+   * }
+   * ```
+   */
+  setSchema(schemaJson?: any | undefined | null): Promise<void>;
   /** Destroy session and clear memory */
   destroy(): Promise<void>;
 }

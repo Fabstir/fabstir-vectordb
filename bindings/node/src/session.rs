@@ -11,6 +11,7 @@ use vector_db::{
     core::{
         types::VectorId,
         storage::S5Storage,
+        schema::MetadataSchema,
     },
     hybrid::{HybridIndex, HybridConfig, HybridPersister},
     storage::{EnhancedS5Storage, S5StorageConfig, StorageMode},
@@ -29,6 +30,7 @@ struct SessionState {
     storage: Arc<EnhancedS5Storage>,
     config: VectorDBConfig,
     vector_dimension: Option<usize>,
+    schema: Arc<RwLock<Option<MetadataSchema>>>, // Optional metadata schema for validation
 }
 
 #[napi]
@@ -89,6 +91,7 @@ impl VectorDBSession {
             storage: Arc::new(storage),
             config,
             vector_dimension: None,
+            schema: Arc::new(RwLock::new(None)), // No schema by default
         };
 
         Ok(Self { state: Some(state) })
@@ -157,6 +160,38 @@ impl VectorDBSession {
                 // Non-fatal: metadata is optional, log and continue
                 eprintln!("Warning: Failed to load metadata: {:?}", e);
                 state.metadata.write().await.clear();
+            }
+        }
+
+        // Load schema if present (v0.2.0 - Phase 6.1)
+        let schema_path = format!("{}/schema.json", cid);
+        match state.storage.as_ref().get(&schema_path).await {
+            Ok(Some(data)) => {
+                // Deserialize schema from JSON
+                let schema_json = String::from_utf8(data)
+                    .map_err(|e| VectorDBError::storage_error(
+                        format!("Failed to decode schema: {}", e)
+                    ))?;
+
+                let schema: MetadataSchema = serde_json::from_str(&schema_json)
+                    .map_err(|e| VectorDBError::storage_error(
+                        format!("Failed to deserialize schema: {}", e)
+                    ))?;
+
+                // Replace current schema with loaded one
+                let mut schema_guard = state.schema.write().await;
+                *schema_guard = Some(schema);
+            }
+            Ok(None) => {
+                // No schema found (optional)
+                let mut schema_guard = state.schema.write().await;
+                *schema_guard = None;
+            }
+            Err(e) => {
+                // Non-fatal: schema is optional, log and continue
+                eprintln!("Warning: Failed to load schema: {:?}", e);
+                let mut schema_guard = state.schema.write().await;
+                *schema_guard = None;
             }
         }
 
@@ -305,7 +340,15 @@ impl VectorDBSession {
         let metadata_map = state.metadata.clone();
         let mut metadata_guard = metadata_map.write().await;
 
+        // Get schema if present
+        let schema = state.schema.read().await;
+
         for input in vectors {
+            // Validate metadata against schema if schema is set
+            if let Some(ref metadata_schema) = *schema {
+                metadata_schema.validate(&input.metadata)
+                    .map_err(|e| VectorDBError::invalid_data(format!("Schema validation failed for vector '{}': {}", input.id, e)))?;
+            }
             let vector_id = VectorId::from_string(&input.id);
             let vector_f32 = utils::js_array_to_vec_f32(input.vector);
 
@@ -506,6 +549,14 @@ impl VectorDBSession {
         let vector_id = VectorId::from_string(&id);
         let vector_id_str = vector_id.to_string();
 
+        // Validate metadata against schema if schema is set
+        let schema = state.schema.read().await;
+        if let Some(ref metadata_schema) = *schema {
+            metadata_schema.validate(&metadata)
+                .map_err(|e| VectorDBError::invalid_data(format!("Schema validation failed for vector '{}': {}", id, e)))?;
+        }
+        drop(schema); // Release schema lock
+
         // Check if vector exists in metadata map
         let metadata_map = state.metadata.clone();
         let mut metadata_guard = metadata_map.write().await;
@@ -581,6 +632,22 @@ impl VectorDBSession {
             ))?;
         drop(metadata_guard);
 
+        // Save schema if present (v0.2.0 - Phase 6.1)
+        let schema_guard = state.schema.read().await;
+        if let Some(ref schema) = *schema_guard {
+            let schema_json = serde_json::to_string(schema)
+                .map_err(|e| VectorDBError::storage_error(
+                    format!("Failed to serialize schema: {}", e)
+                ))?;
+
+            let schema_path = format!("{}/schema.json", path);
+            state.storage.as_ref().put(&schema_path, schema_json.into_bytes()).await
+                .map_err(|e| VectorDBError::storage_error(
+                    format!("Failed to save schema to S5: {}", e)
+                ))?;
+        }
+        drop(schema_guard);
+
         // Return the session_id as the CID (path identifier)
         // In a real S5 implementation, this would be a content-addressed identifier
         Ok(state.session_id.clone())
@@ -604,6 +671,49 @@ impl VectorDBSession {
             hnsw_vector_count: Some(stats.recent_vectors as u32),
             ivf_vector_count: Some(stats.historical_vectors as u32),
         })
+    }
+
+    /// Set metadata schema for validation (v0.2.0 - Phase 6.1)
+    ///
+    /// Once set, all metadata in add_vectors() and update_metadata() will be validated
+    /// against this schema. Pass null/undefined to disable schema validation.
+    ///
+    /// Schema format:
+    /// ```javascript
+    /// {
+    ///   fields: {
+    ///     title: { type: "string" },
+    ///     views: { type: "number" },
+    ///     published: { type: "boolean" },
+    ///     tags: { type: "array", items: { type: "string" } },
+    ///     author: { type: "object", fields: { name: { type: "string" } } }
+    ///   },
+    ///   required: ["title", "views"]
+    /// }
+    /// ```
+    #[napi]
+    pub async unsafe fn set_schema(&mut self, schema_json: Option<serde_json::Value>) -> Result<()> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        let schema_lock = state.schema.clone();
+        let mut schema_guard = schema_lock.write().await;
+
+        match schema_json {
+            Some(json) => {
+                // Parse and validate schema JSON
+                let schema: MetadataSchema = serde_json::from_value(json)
+                    .map_err(|e| VectorDBError::invalid_config(format!("Invalid schema format: {}", e)))?;
+
+                *schema_guard = Some(schema);
+            }
+            None => {
+                // Disable schema validation
+                *schema_guard = None;
+            }
+        }
+
+        Ok(())
     }
 
     /// Destroy session and clear memory
