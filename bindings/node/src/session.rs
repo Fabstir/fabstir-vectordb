@@ -112,7 +112,8 @@ impl VectorDBSession {
 
         // Load index from S5 using chunked format (cid is used as the path prefix)
         // This loads manifest, then chunks in parallel, reconstructs HNSW + IVF indices
-        let loaded_index = persister.load_index_chunked(&cid).await
+        let hybrid_config = HybridConfig::default();
+        let loaded_index = persister.load_index_chunked(&cid, hybrid_config).await
             .map_err(|e| {
                 use vector_db::hybrid::PersistenceError;
                 match e {
@@ -441,6 +442,77 @@ impl VectorDBSession {
             deleted_count: delete_stats.successful as u32,
             deleted_ids,
         })
+    }
+
+    /// Update metadata for an existing vector
+    ///
+    /// Replaces the entire metadata object for a vector (does not merge).
+    /// The internal _originalId field is preserved automatically.
+    ///
+    /// # Arguments
+    /// * `id` - The original user-provided ID of the vector
+    /// * `metadata` - New metadata object (replaces existing metadata)
+    ///
+    /// # Returns
+    /// Ok(()) on success
+    ///
+    /// # Errors
+    /// Returns error if:
+    /// - Vector with given ID does not exist
+    /// - Session has been destroyed
+    ///
+    /// # Example
+    /// ```javascript
+    /// await session.updateMetadata('doc1', {
+    ///   title: 'Updated Title',
+    ///   timestamp: Date.now(),
+    ///   tags: ['ai', 'ml']
+    /// });
+    /// ```
+    #[napi]
+    pub async unsafe fn update_metadata(
+        &mut self,
+        id: String,
+        metadata: serde_json::Value,
+    ) -> Result<()> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Convert user-provided ID to VectorId hash for lookup
+        let vector_id = VectorId::from_string(&id);
+        let vector_id_str = vector_id.to_string();
+
+        // Check if vector exists in metadata map
+        let metadata_map = state.metadata.clone();
+        let mut metadata_guard = metadata_map.write().await;
+
+        if !metadata_guard.contains_key(&vector_id_str) {
+            return Err(VectorDBError::index_error(
+                format!("Vector with id '{}' does not exist", id)
+            ).into());
+        }
+
+        // Prepare metadata with original ID preserved
+        // Inject the original user-provided ID into metadata so it's preserved
+        let metadata_with_id = match metadata {
+            serde_json::Value::Object(mut map) => {
+                // Preserve original ID
+                map.insert("_originalId".to_string(), serde_json::Value::String(id.clone()));
+                serde_json::Value::Object(map)
+            }
+            other => {
+                // For non-object metadata, wrap it with original ID
+                serde_json::json!({
+                    "_originalId": id,
+                    "_userMetadata": other
+                })
+            }
+        };
+
+        // Update metadata in HashMap (replaces existing metadata)
+        metadata_guard.insert(vector_id_str, metadata_with_id);
+
+        Ok(())
     }
 
     /// Save index to S5 using chunked storage format

@@ -132,6 +132,34 @@ export declare class VectorDbSession {
    * Returns error if session has been destroyed
    */
   deleteByMetadata(filter: any): Promise<DeleteResult>;
+  /**
+   * Update metadata for an existing vector
+   *
+   * Replaces the entire metadata object for a vector (does not merge).
+   * The internal _originalId field is preserved automatically.
+   *
+   * # Arguments
+   * * `id` - The original user-provided ID of the vector
+   * * `metadata` - New metadata object (replaces existing metadata)
+   *
+   * # Returns
+   * Ok(()) on success
+   *
+   * # Errors
+   * Returns error if:
+   * - Vector with given ID does not exist
+   * - Session has been destroyed
+   *
+   * # Example
+   * ```javascript
+   * await session.updateMetadata('doc1', {
+   *   title: 'Updated Title',
+   *   timestamp: Date.now(),
+   *   tags: ['ai', 'ml']
+   * });
+   * ```
+   */
+  updateMetadata(id: string, metadata: any): Promise<void>;
   /** Save index to S5 using chunked storage format */
   saveToS5(): Promise<string>;
   /** Get session statistics */
