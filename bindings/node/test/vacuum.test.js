@@ -29,7 +29,9 @@ describe('Vacuum API Tests', () => {
     console.log('# Creating session for vacuum tests...');
     session = await VectorDbSession.create({
       s5Portal: 'http://localhost:5522',
-      userSeedPhrase: 'test-vacuum-seed',
+      // Note: For mock mode, any string works. For real S5 mode, must be valid
+      // 12-word BIP39 seed phrase (see test/REAL_S5_TESTING.md for details)
+      userSeedPhrase: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
       sessionId: `vacuum-test-${Date.now()}`,
       storageMode: 'mock',
     });
@@ -135,7 +137,7 @@ describe('Vacuum API Tests', () => {
     await session.destroy();
     session = await VectorDbSession.create({
       s5Portal: 'http://localhost:5522',
-      userSeedPhrase: 'test-vacuum-seed-reload',
+      userSeedPhrase: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
       sessionId: `vacuum-reload-${Date.now()}`,
       storageMode: 'mock',
     });

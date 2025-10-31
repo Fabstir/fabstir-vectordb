@@ -1053,12 +1053,24 @@ const vacStats = await session.vacuum();
 - ✅ Documentation complete with usage examples
 
 **Performance Note**:
-- Vacuum operation (in-memory cleanup): <100ms for 1000 deletions
-- Tested with mock storage (in-memory only)
-- Real S5 persistence adds ~10-15 seconds for 100K vectors (saveToS5)
-  - Based on Enhanced S5.js benchmarks: ~800ms per file × 12 files (10 chunks + manifest + schema)
-  - Network latency dominates (registry operations), not bandwidth
-- Recommended workflow: `vacuum()` → `saveToS5()` to minimize manifest size
+- Vacuum operation (in-memory cleanup): <1ms (instant cleanup)
+- Tested with real Enhanced S5.js storage (@julesl23/s5js@0.9.0-beta)
+
+**Real S5 Performance Metrics** (50 vectors, 384 dimensions):
+- Vacuum: <1ms (removed 10 soft-deleted vectors)
+- Save to S5: 8.8s (5 files: manifest.json, timestamps.cbor, hnsw_nodes.cbor, metadata.cbor, metadata_map.cbor)
+- Load from S5: 4.1s (decentralized storage retrieval)
+- Total round-trip: 12.8s
+- Persistence verified: 40 active vectors, 0 deleted after reload ✅
+
+**Real S5 Test Infrastructure**:
+- Local Enhanced S5.js HTTP server (test-s5-server/) on port 5522
+- S5.js P2P network connection (wss://s5.ninja/s5/p2p)
+- Portal registration (s5.vup.cx)
+- Valid BIP39 seed phrase for identity recovery
+- Manual test: `bindings/node/test/vacuum-real-s5-manual.js` ✅ ALL TESTS PASSED
+
+**Recommended workflow**: `vacuum()` → `saveToS5()` to minimize manifest size and optimize decentralized storage
 
 **Bounded Autonomy**: 45 lines session.rs, 27 lines types.rs, 15 lines hybrid/core.rs, 197 lines test
 
