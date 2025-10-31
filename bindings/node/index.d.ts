@@ -32,6 +32,15 @@ export interface SearchOptions {
   threshold?: number;
   /** Include vectors in results (default: false) */
   includeVectors?: boolean;
+  /**
+   * Metadata filter (MongoDB-style query, optional)
+   * Examples:
+   * - `{ "category": "technology" }` - Equals filter
+   * - `{ "status": { "$in": ["active", "pending"] } }` - In filter
+   * - `{ "views": { "$gte": 1000, "$lte": 5000 } }` - Range filter
+   * - `{ "$and": [{ "category": "tech" }, { "published": true }] }` - And combinator
+   */
+  filter?: any;
 }
 export interface VectorInput {
   /** Unique identifier */
@@ -52,16 +61,36 @@ export interface SearchResult {
   vector?: Array<number>;
 }
 export interface SessionStats {
-  /** Total vectors in index */
+  /** Total active (non-deleted) vectors in index */
   vectorCount: number;
   /** Current memory usage in MB */
   memoryUsageMb: number;
   /** Active index type */
   indexType: string;
-  /** Vectors in HNSW index */
+  /** Active vectors in HNSW index */
   hnswVectorCount?: number;
-  /** Vectors in IVF index */
+  /** Active vectors in IVF index */
   ivfVectorCount?: number;
+  /** Number of soft-deleted vectors in HNSW index */
+  hnswDeletedCount?: number;
+  /** Number of soft-deleted vectors in IVF index */
+  ivfDeletedCount?: number;
+  /** Total number of soft-deleted vectors */
+  totalDeletedCount?: number;
+}
+export interface DeleteResult {
+  /** Number of vectors successfully deleted */
+  deletedCount: number;
+  /** IDs of deleted vectors */
+  deletedIds: Array<string>;
+}
+export interface VacuumStats {
+  /** Number of vectors removed from HNSW index */
+  hnswRemoved: number;
+  /** Number of vectors removed from IVF index */
+  ivfRemoved: number;
+  /** Total number of vectors removed */
+  totalRemoved: number;
 }
 export declare function getVersion(): string;
 export declare function getPlatformInfo(): PlatformInfo;
@@ -91,10 +120,123 @@ export declare class VectorDbSession {
   ): Promise<Array<SearchResult>>;
   /** Add vectors to the index */
   addVectors(vectors: Array<VectorInput>): Promise<void>;
+  /**
+   * Delete a vector from the index by ID
+   *
+   * Performs soft deletion - vector is marked as deleted but not physically removed
+   * until vacuum() is called or the index is saved and reloaded.
+   *
+   * # Arguments
+   * * `id` - The ID of the vector to delete
+   *
+   * # Errors
+   * Returns error if:
+   * - Vector with given ID does not exist
+   * - Session has been destroyed
+   */
+  deleteVector(id: string): Promise<void>;
+  /**
+   * Delete vectors by metadata filter
+   *
+   * Scans all vectors and deletes those whose metadata matches the filter.
+   * Supports:
+   * - Simple field matching: { "userId": "user123" }
+   * - Multiple fields (AND logic): { "userId": "user123", "status": "active" }
+   * - Nested field access with dot notation: { "user.id": "123" }
+   * - Array field matching: { "tags": "ai" } (checks if value is in array)
+   *
+   * # Arguments
+   * * `filter` - JSON object with fields to match
+   *
+   * # Returns
+   * DeleteResult containing count of deleted vectors and their IDs
+   *
+   * # Errors
+   * Returns error if session has been destroyed
+   */
+  deleteByMetadata(filter: any): Promise<DeleteResult>;
+  /**
+   * Update metadata for an existing vector
+   *
+   * Replaces the entire metadata object for a vector (does not merge).
+   * The internal _originalId field is preserved automatically.
+   *
+   * # Arguments
+   * * `id` - The original user-provided ID of the vector
+   * * `metadata` - New metadata object (replaces existing metadata)
+   *
+   * # Returns
+   * Ok(()) on success
+   *
+   * # Errors
+   * Returns error if:
+   * - Vector with given ID does not exist
+   * - Session has been destroyed
+   *
+   * # Example
+   * ```javascript
+   * await session.updateMetadata('doc1', {
+   *   title: 'Updated Title',
+   *   timestamp: Date.now(),
+   *   tags: ['ai', 'ml']
+   * });
+   * ```
+   */
+  updateMetadata(id: string, metadata: any): Promise<void>;
   /** Save index to S5 using chunked storage format */
   saveToS5(): Promise<string>;
   /** Get session statistics */
-  getStats(): SessionStats;
+  getStats(): Promise<SessionStats>;
+  /**
+   * Set metadata schema for validation (v0.2.0 - Phase 6.1)
+   *
+   * Once set, all metadata in add_vectors() and update_metadata() will be validated
+   * against this schema. Pass null/undefined to disable schema validation.
+   *
+   * Schema format:
+   * ```javascript
+   * {
+   *   fields: {
+   *     title: { type: "string" },
+   *     views: { type: "number" },
+   *     published: { type: "boolean" },
+   *     tags: { type: "array", items: { type: "string" } },
+   *     author: { type: "object", fields: { name: { type: "string" } } }
+   *   },
+   *   required: ["title", "views"]
+   * }
+   * ```
+   */
+  setSchema(schemaJson?: any | undefined | null): Promise<void>;
+  /**
+   * Perform vacuum operation to physically remove soft-deleted vectors
+   *
+   * This operation:
+   * - Removes deleted vectors from HNSW and IVF indices
+   * - Frees up memory occupied by deleted vectors
+   * - Reduces the size of persisted index data
+   * - Returns statistics about removed vectors
+   *
+   * Should be called periodically after deletions to reclaim space.
+   * Recommended before `saveToS5()` to minimize storage size.
+   *
+   * # Example
+   *
+   * ```javascript
+   * // Delete some vectors
+   * await session.deleteVector('vec-1');
+   * await session.deleteByMetadata({ status: 'archived' });
+   *
+   * // Vacuum to reclaim space
+   * const stats = await session.vacuum();
+   * console.log(`Removed ${stats.total_removed} vectors`);
+   * console.log(`HNSW: ${stats.hnsw_removed}, IVF: ${stats.ivf_removed}`);
+   *
+   * // Save with smaller manifest
+   * await session.saveToS5();
+   * ```
+   */
+  vacuum(): Promise<VacuumStats>;
   /** Destroy session and clear memory */
   destroy(): Promise<void>;
 }

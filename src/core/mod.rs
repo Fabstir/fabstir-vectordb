@@ -3,6 +3,8 @@
 
 pub mod chunk;
 pub mod chunk_cache;
+pub mod metadata_filter;
+pub mod schema;
 pub mod storage;
 pub mod types;
 pub mod vector_ops;
@@ -13,3 +15,5 @@ pub use chunk::{
     LayerMetadata, ChunkError, MANIFEST_VERSION,
 };
 pub use chunk_cache::{ChunkCache, CacheMetrics};
+pub use metadata_filter::{MetadataFilter, FilterError, get_field};
+pub use schema::{MetadataSchema, FieldType, SchemaError};

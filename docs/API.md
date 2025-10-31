@@ -1,6 +1,6 @@
 # Fabstir AI Vector Database API Documentation
 
-**Version:** v0.1.1 (Chunked Storage Release)
+**Version:** v0.2.0 (CRUD Operations Release)
 
 ## Overview
 
@@ -8,6 +8,8 @@ Fabstir AI Vector Database is a high-performance, decentralized vector database 
 
 ### Key Features
 
+- **Full CRUD Operations (v0.2.0)**: Delete vectors by ID or metadata, update metadata, filtered search
+- **Metadata Filtering**: MongoDB-style query language (Equals, In, Range, And, Or operators)
 - **Chunked Storage**: Scalable partitioning with lazy loading (10K vectors/chunk default)
 - **Encrypted by Default**: ChaCha20-Poly1305 encryption at rest (<5% overhead)
 - **High Performance**: 58ms warm search latency, 64 MB memory for 100K vectors (Phase 6 tested)
@@ -114,6 +116,137 @@ console.log(results[0].metadata.text);  // Direct property access
 
 await session.destroy();  // CRITICAL: Clean up memory
 ```
+
+#### CRUD Operations (v0.2.0)
+
+The v0.2.0 release adds full CRUD support: delete vectors by ID or metadata, update metadata, and filtered search.
+
+**Deleting Vectors by ID**
+
+```javascript
+// Delete a single vector (soft deletion)
+await session.deleteVector('doc1');
+
+// Verify deletion (vector won't appear in search results)
+const results = await session.search(queryVector, 10);
+// 'doc1' will not be in results
+
+// Deletion persists after save/load
+const cid = await session.saveToS5();
+await session.destroy();
+
+const newSession = await VectorDbSession.create({ /* config */ });
+await newSession.loadUserVectors(cid, { lazyLoad: true });
+// 'doc1' still deleted
+```
+
+**Deleting Vectors by Metadata Filter**
+
+```javascript
+// Delete all vectors matching a filter
+const result = await session.deleteByMetadata({
+  category: 'outdated'
+});
+
+console.log(`Deleted ${result.deletedCount} vectors`);
+console.log(`IDs: ${result.deletedIds.join(', ')}`);
+
+// Complex filters with operators
+const result2 = await session.deleteByMetadata({
+  $and: [
+    { status: 'inactive' },
+    { lastAccess: { $lt: Date.now() - 86400000 } }  // 24 hours
+  ]
+});
+
+// Range deletion
+const result3 = await session.deleteByMetadata({
+  views: { $gte: 0, $lte: 10 }  // Low engagement content
+});
+```
+
+**Updating Metadata**
+
+```javascript
+// Update metadata for a specific vector
+await session.updateMetadata('doc1', {
+  title: 'Updated Title',
+  views: 9999,
+  tags: ['important', 'featured'],
+  updated: true
+});
+
+// Verify update
+const results = await session.search(queryVector, 5);
+const doc = results.find(r => r.id === 'doc1');
+console.log(doc.metadata.title);  // 'Updated Title'
+console.log(doc.metadata.updated);  // true
+
+// Note: Vector embeddings are NOT changed, only metadata
+// If content changes significantly, re-add the vector with new embedding
+```
+
+**Filtered Search**
+
+```javascript
+// Equals filter
+const techDocs = await session.search(queryVector, 10, {
+  threshold: 0.7,
+  filter: { category: 'technology' }
+});
+
+// In operator
+const activeDocs = await session.search(queryVector, 10, {
+  filter: { status: { $in: ['active', 'pending'] } }
+});
+
+// Range filter
+const popularDocs = await session.search(queryVector, 10, {
+  filter: { views: { $gte: 1000, $lte: 5000 } }
+});
+
+// AND combinator
+const premiumTech = await session.search(queryVector, 10, {
+  filter: {
+    $and: [
+      { category: 'technology' },
+      { premium: true },
+      { views: { $gte: 500 } }
+    ]
+  }
+});
+
+// OR combinator
+const importantDocs = await session.search(queryVector, 10, {
+  filter: {
+    $or: [
+      { priority: 'high' },
+      { featured: true }
+    ]
+  }
+});
+```
+
+**Filter Operators Reference**
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| Equals | Exact match | `{ status: 'active' }` |
+| `$in` | Value in array | `{ category: { $in: ['tech', 'science'] } }` |
+| `$gt` | Greater than | `{ views: { $gt: 100 } }` |
+| `$gte` | Greater than or equal | `{ score: { $gte: 0.8 } }` |
+| `$lt` | Less than | `{ age: { $lt: 30 } }` |
+| `$lte` | Less than or equal | `{ price: { $lte: 50 } }` |
+| `$and` | All conditions match | `{ $and: [{...}, {...}] }` |
+| `$or` | Any condition matches | `{ $or: [{...}, {...}] }` |
+
+**Performance Notes**
+
+- Filtering uses post-search filtering with k_oversample (3x by default)
+- For `k=10` with filter, searches ~30 candidates, filters, returns 10
+- Selective filters (match <10% of data) have minimal impact
+- Non-selective filters may require tuning k_oversample
+- Soft deletions are removed physically on next save (vacuum)
 
 **Documentation:** [Node.js Integration Guide](./sdk-reference/VECTOR_DB_INTEGRATION.md)
 
@@ -714,6 +847,17 @@ interface SearchResult {
   metadata?: object;
 }
 ```
+
+### Delete Result (v0.2.0)
+
+```typescript
+interface DeleteResult {
+  deletedCount: number; // Number of vectors deleted
+  deletedIds: string[]; // Array of deleted vector IDs
+}
+```
+
+Returned by `deleteByMetadata()` to provide feedback on bulk deletion operations.
 
 ### Index Configuration
 
@@ -1578,6 +1722,41 @@ app.use("/search", requireRole("reader"));
 ---
 
 ## Version History
+
+### v0.2.0 - CRUD Operations Release (2025-01-31)
+
+**Major Features:**
+
+- ✅ **Full CRUD Operations**: Delete vectors by ID or metadata, update metadata in-place
+- ✅ **Metadata Filtering**: MongoDB-style query language with 8 operators
+- ✅ **Soft Deletion**: Mark vectors as deleted, physically vacuum on save
+- ✅ **Batch Operations**: `deleteByMetadata()` with filter support
+- ✅ **Persistence**: All CRUD operations persist across save/load cycles
+- ✅ **Filter Operators**: Equals, `$in`, `$gt`, `$gte`, `$lt`, `$lte`, `$and`, `$or`
+
+**New API Methods:**
+
+- `deleteVector(id: string): Promise<void>` - Delete single vector by ID
+- `deleteByMetadata(filter: any): Promise<DeleteResult>` - Bulk delete with filter
+- `updateMetadata(id: string, metadata: any): Promise<void>` - Update metadata
+- `search(vector, k, { filter }): Promise<SearchResult[]>` - Filtered search
+
+**Breaking Changes:**
+
+- Manifest format upgraded from v2 to v3 (includes soft deletion tracking)
+- Old v2 manifests are auto-migrated on first load
+
+**Performance:**
+
+- Post-search filtering with k_oversample strategy (3x multiplier default)
+- Selective filters (<10% of data) have minimal impact
+- Soft deletions vacuumed on save (no runtime penalty)
+- Tested with 100K vectors, complex filters, <100ms search latency
+
+**Documentation:**
+
+- See [CRUD Operations](#crud-operations-v020) for examples
+- See [Performance Tuning](./PERFORMANCE_TUNING.md) for filter optimization
 
 ### v0.1.1 - Chunked Storage Release (2025-01-28)
 

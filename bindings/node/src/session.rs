@@ -11,6 +11,7 @@ use vector_db::{
     core::{
         types::VectorId,
         storage::S5Storage,
+        schema::MetadataSchema,
     },
     hybrid::{HybridIndex, HybridConfig, HybridPersister},
     storage::{EnhancedS5Storage, S5StorageConfig, StorageMode},
@@ -18,7 +19,7 @@ use vector_db::{
 
 use crate::{
     error::VectorDBError,
-    types::{LoadOptions, SearchOptions, SearchResult, SessionStats, VectorDBConfig, VectorInput},
+    types::{DeleteResult, LoadOptions, SearchOptions, SearchResult, SessionStats, VectorDBConfig, VectorInput},
     utils,
 };
 
@@ -29,6 +30,7 @@ struct SessionState {
     storage: Arc<EnhancedS5Storage>,
     config: VectorDBConfig,
     vector_dimension: Option<usize>,
+    schema: Arc<RwLock<Option<MetadataSchema>>>, // Optional metadata schema for validation
 }
 
 #[napi]
@@ -89,6 +91,7 @@ impl VectorDBSession {
             storage: Arc::new(storage),
             config,
             vector_dimension: None,
+            schema: Arc::new(RwLock::new(None)), // No schema by default
         };
 
         Ok(Self { state: Some(state) })
@@ -112,7 +115,8 @@ impl VectorDBSession {
 
         // Load index from S5 using chunked format (cid is used as the path prefix)
         // This loads manifest, then chunks in parallel, reconstructs HNSW + IVF indices
-        let loaded_index = persister.load_index_chunked(&cid).await
+        let hybrid_config = HybridConfig::default();
+        let loaded_index = persister.load_index_chunked(&cid, hybrid_config).await
             .map_err(|e| {
                 use vector_db::hybrid::PersistenceError;
                 match e {
@@ -159,6 +163,38 @@ impl VectorDBSession {
             }
         }
 
+        // Load schema if present (v0.2.0 - Phase 6.1)
+        let schema_path = format!("{}/schema.json", cid);
+        match state.storage.as_ref().get(&schema_path).await {
+            Ok(Some(data)) => {
+                // Deserialize schema from JSON
+                let schema_json = String::from_utf8(data)
+                    .map_err(|e| VectorDBError::storage_error(
+                        format!("Failed to decode schema: {}", e)
+                    ))?;
+
+                let schema: MetadataSchema = serde_json::from_str(&schema_json)
+                    .map_err(|e| VectorDBError::storage_error(
+                        format!("Failed to deserialize schema: {}", e)
+                    ))?;
+
+                // Replace current schema with loaded one
+                let mut schema_guard = state.schema.write().await;
+                *schema_guard = Some(schema);
+            }
+            Ok(None) => {
+                // No schema found (optional)
+                let mut schema_guard = state.schema.write().await;
+                *schema_guard = None;
+            }
+            Err(e) => {
+                // Non-fatal: schema is optional, log and continue
+                eprintln!("Warning: Failed to load schema: {:?}", e);
+                let mut schema_guard = state.schema.write().await;
+                *schema_guard = None;
+            }
+        }
+
         Ok(())
     }
 
@@ -176,26 +212,83 @@ impl VectorDBSession {
         // Convert f64 to f32 for Rust
         let query_f32 = utils::js_array_to_vec_f32(query_vector);
 
+        // Validate query vector dimension
+        if let Some(expected_dim) = state.vector_dimension {
+            let actual_dim = query_f32.len();
+            if actual_dim != expected_dim {
+                return Err(VectorDBError::invalid_input(
+                    format!("Query vector dimension mismatch: expected {} dimensions, got {}", expected_dim, actual_dim)
+                ).into());
+            }
+        }
+
         let threshold = options.as_ref()
             .and_then(|o| o.threshold)
             .unwrap_or(0.7) as f32; // Convert to f32 for comparison
 
-        // Perform search using HybridIndex
-        let index = state.index.read().await;
-        let results = index.search(&query_f32, k as usize)
-            .await
-            .map_err(|e| VectorDBError::index_error(format!("Search failed: {}", e)))?;
-        drop(index); // Release read lock
+        let include_vectors = options.as_ref()
+            .and_then(|o| o.include_vectors)
+            .unwrap_or(false);
 
-        // Get metadata map
+        // Extract and parse filter from options
+        let filter = if let Some(filter_json) = options.as_ref().and_then(|o| o.filter.as_ref()) {
+            use vector_db::core::metadata_filter::MetadataFilter;
+
+            match MetadataFilter::from_json(filter_json) {
+                Ok(f) => Some(f),
+                Err(e) => {
+                    return Err(VectorDBError::invalid_input(
+                        format!("Invalid filter: {}", e)
+                    ).into());
+                }
+            }
+        } else {
+            None
+        };
+
+        // Get metadata map (needed for both filtering and result formatting)
         let metadata_map = state.metadata.read().await;
+
+        // Perform search using HybridIndex (with or without filter)
+        let index = state.index.read().await;
+        let results = if filter.is_some() {
+            // Use filtered search with k-oversampling
+            index.search_with_filter(&query_f32, k as usize, filter.as_ref(), &*metadata_map)
+                .await
+                .map_err(|e| VectorDBError::index_error(format!("Filtered search failed: {}", e)))?
+        } else {
+            // Use regular search (backward compatibility)
+            index.search(&query_f32, k as usize)
+                .await
+                .map_err(|e| VectorDBError::index_error(format!("Search failed: {}", e)))?
+        };
+
+        // Collect vectors if includeVectors is requested
+        let mut vectors_map: std::collections::HashMap<String, Vec<f32>> = std::collections::HashMap::new();
+        if include_vectors {
+            let hnsw_index = index.get_recent_index().await;
+            let ivf_index = index.get_historical_index().await;
+
+            for result in &results {
+                let vector_id = &result.vector_id;
+                if let Some(vec_f32) = hnsw_index.get_vector_by_id(vector_id) {
+                    vectors_map.insert(vector_id.to_string(), vec_f32.clone());
+                }
+                else if let Some(vec_f32) = ivf_index.get_vector_by_id(vector_id) {
+                    vectors_map.insert(vector_id.to_string(), vec_f32.clone());
+                }
+            }
+        }
+        drop(index); // Release read lock
 
         // Convert results to SearchResult format
         let search_results: Vec<SearchResult> = results
             .into_iter()
             .filter(|r| {
-                // Convert distance to similarity score (1 - distance) and filter by threshold
-                let score = 1.0 - r.distance;
+                // Convert Euclidean distance to similarity score in [0, 1] range
+                // Using formula: similarity = 1 / (1 + distance)
+                // This maps distance=0 → similarity=1, and distance=∞ → similarity=0
+                let score = 1.0 / (1.0 + r.distance);
                 score >= threshold
             })
             .map(|r| {
@@ -219,14 +312,22 @@ impl VectorDBSession {
                     }
                     id
                 } else {
-                    vector_id_str
+                    vector_id_str.clone()
+                };
+
+                // Include vector data if requested
+                let vector = if include_vectors {
+                    vectors_map.get(&vector_id_str)
+                        .map(|vec_f32| utils::vec_f32_to_js_array(vec_f32.clone()))
+                } else {
+                    None
                 };
 
                 SearchResult {
                     id: result_id,
-                    score: (1.0 - r.distance) as f64, // Convert distance to similarity score
+                    score: (1.0 / (1.0 + r.distance)) as f64, // Convert distance to similarity score
                     metadata,
-                    vector: None, // TODO: Add vector inclusion based on options
+                    vector,
                 }
             })
             .collect();
@@ -280,7 +381,15 @@ impl VectorDBSession {
         let metadata_map = state.metadata.clone();
         let mut metadata_guard = metadata_map.write().await;
 
+        // Get schema if present
+        let schema = state.schema.read().await;
+
         for input in vectors {
+            // Validate metadata against schema if schema is set
+            if let Some(ref metadata_schema) = *schema {
+                metadata_schema.validate(&input.metadata)
+                    .map_err(|e| VectorDBError::invalid_data(format!("Schema validation failed for vector '{}': {}", input.id, e)))?;
+            }
             let vector_id = VectorId::from_string(&input.id);
             let vector_f32 = utils::js_array_to_vec_f32(input.vector);
 
@@ -318,6 +427,206 @@ impl VectorDBSession {
             // Use VectorId's string representation as key for consistent lookup
             metadata_guard.insert(vector_id.to_string(), metadata_with_id);
         }
+
+        Ok(())
+    }
+
+    /// Delete a vector from the index by ID
+    ///
+    /// Performs soft deletion - vector is marked as deleted but not physically removed
+    /// until vacuum() is called or the index is saved and reloaded.
+    ///
+    /// # Arguments
+    /// * `id` - The ID of the vector to delete
+    ///
+    /// # Errors
+    /// Returns error if:
+    /// - Vector with given ID does not exist
+    /// - Session has been destroyed
+    #[napi]
+    pub async unsafe fn delete_vector(&mut self, id: String) -> Result<()> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        let vector_id = VectorId::from_string(&id);
+
+        // Delete from index (soft deletion)
+        let index = state.index.clone();
+        let index_guard = index.write().await;
+
+        index_guard.delete(vector_id.clone())
+            .await
+            .map_err(|e| VectorDBError::index_error(format!("Failed to delete vector: {}", e)))?;
+
+        drop(index_guard);
+
+        // Remove from metadata HashMap
+        let metadata_map = state.metadata.clone();
+        let mut metadata_guard = metadata_map.write().await;
+        metadata_guard.remove(&vector_id.to_string());
+
+        Ok(())
+    }
+
+    /// Delete vectors by metadata filter
+    ///
+    /// Scans all vectors and deletes those whose metadata matches the filter.
+    /// Supports:
+    /// - Simple field matching: { "userId": "user123" }
+    /// - Multiple fields (AND logic): { "userId": "user123", "status": "active" }
+    /// - Nested field access with dot notation: { "user.id": "123" }
+    /// - Array field matching: { "tags": "ai" } (checks if value is in array)
+    ///
+    /// # Arguments
+    /// * `filter` - JSON object with fields to match
+    ///
+    /// # Returns
+    /// DeleteResult containing count of deleted vectors and their IDs
+    ///
+    /// # Errors
+    /// Returns error if session has been destroyed
+    #[napi]
+    pub async unsafe fn delete_by_metadata(&mut self, filter: serde_json::Value) -> Result<DeleteResult> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Get metadata map
+        let metadata_map = state.metadata.clone();
+        let metadata_guard = metadata_map.read().await;
+
+        // Find all vectors matching the filter
+        // Store both the VectorId hash key AND the original user ID
+        let mut matching_vectors: Vec<(String, String)> = Vec::new(); // (vector_id_hash, original_id)
+        for (vector_id_str, metadata) in metadata_guard.iter() {
+            if matches_filter(metadata, &filter) {
+                // Extract original ID from metadata
+                if let Some(serde_json::Value::String(original_id)) = metadata.get("_originalId") {
+                    matching_vectors.push((vector_id_str.clone(), original_id.clone()));
+                } else {
+                    // Fallback: use the vector_id_str directly (shouldn't happen)
+                    matching_vectors.push((vector_id_str.clone(), vector_id_str.clone()));
+                }
+            }
+        }
+        drop(metadata_guard);
+
+        // Convert original IDs to VectorIds for deletion
+        let vector_ids: Vec<VectorId> = matching_vectors
+            .iter()
+            .map(|(_, original_id)| VectorId::from_string(original_id))
+            .collect();
+
+        // Batch delete from index
+        let index = state.index.clone();
+        let index_guard = index.write().await;
+
+        let delete_stats = index_guard.batch_delete(&vector_ids)
+            .await
+            .map_err(|e| VectorDBError::index_error(format!("Failed to batch delete: {}", e)))?;
+
+        drop(index_guard);
+
+        // Remove from metadata HashMap (only successfully deleted ones)
+        // Only process the first 'successful' count from matching_vectors
+        let successfully_deleted: Vec<(String, String)> = matching_vectors
+            .iter()
+            .take(delete_stats.successful)
+            .cloned()
+            .collect();
+
+        let mut metadata_guard = metadata_map.write().await;
+        for (vector_id_hash, _) in &successfully_deleted {
+            metadata_guard.remove(vector_id_hash);
+        }
+        drop(metadata_guard);
+
+        // Return the original user-provided IDs (not the VectorId hashes)
+        let deleted_ids: Vec<String> = successfully_deleted
+            .iter()
+            .map(|(_, original_id)| original_id.clone())
+            .collect();
+
+        Ok(DeleteResult {
+            deleted_count: delete_stats.successful as u32,
+            deleted_ids,
+        })
+    }
+
+    /// Update metadata for an existing vector
+    ///
+    /// Replaces the entire metadata object for a vector (does not merge).
+    /// The internal _originalId field is preserved automatically.
+    ///
+    /// # Arguments
+    /// * `id` - The original user-provided ID of the vector
+    /// * `metadata` - New metadata object (replaces existing metadata)
+    ///
+    /// # Returns
+    /// Ok(()) on success
+    ///
+    /// # Errors
+    /// Returns error if:
+    /// - Vector with given ID does not exist
+    /// - Session has been destroyed
+    ///
+    /// # Example
+    /// ```javascript
+    /// await session.updateMetadata('doc1', {
+    ///   title: 'Updated Title',
+    ///   timestamp: Date.now(),
+    ///   tags: ['ai', 'ml']
+    /// });
+    /// ```
+    #[napi]
+    pub async unsafe fn update_metadata(
+        &mut self,
+        id: String,
+        metadata: serde_json::Value,
+    ) -> Result<()> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Convert user-provided ID to VectorId hash for lookup
+        let vector_id = VectorId::from_string(&id);
+        let vector_id_str = vector_id.to_string();
+
+        // Validate metadata against schema if schema is set
+        let schema = state.schema.read().await;
+        if let Some(ref metadata_schema) = *schema {
+            metadata_schema.validate(&metadata)
+                .map_err(|e| VectorDBError::invalid_data(format!("Schema validation failed for vector '{}': {}", id, e)))?;
+        }
+        drop(schema); // Release schema lock
+
+        // Check if vector exists in metadata map
+        let metadata_map = state.metadata.clone();
+        let mut metadata_guard = metadata_map.write().await;
+
+        if !metadata_guard.contains_key(&vector_id_str) {
+            return Err(VectorDBError::index_error(
+                format!("Vector with id '{}' does not exist", id)
+            ).into());
+        }
+
+        // Prepare metadata with original ID preserved
+        // Inject the original user-provided ID into metadata so it's preserved
+        let metadata_with_id = match metadata {
+            serde_json::Value::Object(mut map) => {
+                // Preserve original ID
+                map.insert("_originalId".to_string(), serde_json::Value::String(id.clone()));
+                serde_json::Value::Object(map)
+            }
+            other => {
+                // For non-object metadata, wrap it with original ID
+                serde_json::json!({
+                    "_originalId": id,
+                    "_userMetadata": other
+                })
+            }
+        };
+
+        // Update metadata in HashMap (replaces existing metadata)
+        metadata_guard.insert(vector_id_str, metadata_with_id);
 
         Ok(())
     }
@@ -364,6 +673,22 @@ impl VectorDBSession {
             ))?;
         drop(metadata_guard);
 
+        // Save schema if present (v0.2.0 - Phase 6.1)
+        let schema_guard = state.schema.read().await;
+        if let Some(ref schema) = *schema_guard {
+            let schema_json = serde_json::to_string(schema)
+                .map_err(|e| VectorDBError::storage_error(
+                    format!("Failed to serialize schema: {}", e)
+                ))?;
+
+            let schema_path = format!("{}/schema.json", path);
+            state.storage.as_ref().put(&schema_path, schema_json.into_bytes()).await
+                .map_err(|e| VectorDBError::storage_error(
+                    format!("Failed to save schema to S5: {}", e)
+                ))?;
+        }
+        drop(schema_guard);
+
         // Return the session_id as the CID (path identifier)
         // In a real S5 implementation, this would be a content-addressed identifier
         Ok(state.session_id.clone())
@@ -371,22 +696,115 @@ impl VectorDBSession {
 
     /// Get session statistics
     #[napi]
-    pub fn get_stats(&self) -> Result<SessionStats> {
+    pub async fn get_stats(&self) -> Result<SessionStats> {
         let state = self.state.as_ref()
             .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
 
-        // Get stats from HybridIndex (synchronous call)
-        let index = state.index.try_read()
-            .map_err(|_| VectorDBError::session_error("Failed to read index stats"))?;
-
+        // Get active count (excludes deleted vectors)
+        let index = state.index.read().await;
+        let active_count = index.active_count().await;
         let stats = index.get_stats();
 
+        // Get deletion stats
+        let (hnsw_deleted, ivf_deleted, total_deleted) = index.deletion_stats().await;
+
         Ok(SessionStats {
-            vector_count: stats.total_vectors as u32,
+            vector_count: active_count as u32,
             memory_usage_mb: ((stats.recent_index_memory + stats.historical_index_memory) as f64) / 1_048_576.0,
             index_type: "hybrid".to_string(),
             hnsw_vector_count: Some(stats.recent_vectors as u32),
             ivf_vector_count: Some(stats.historical_vectors as u32),
+            hnsw_deleted_count: Some(hnsw_deleted as u32),
+            ivf_deleted_count: Some(ivf_deleted as u32),
+            total_deleted_count: Some(total_deleted as u32),
+        })
+    }
+
+    /// Set metadata schema for validation (v0.2.0 - Phase 6.1)
+    ///
+    /// Once set, all metadata in add_vectors() and update_metadata() will be validated
+    /// against this schema. Pass null/undefined to disable schema validation.
+    ///
+    /// Schema format:
+    /// ```javascript
+    /// {
+    ///   fields: {
+    ///     title: { type: "string" },
+    ///     views: { type: "number" },
+    ///     published: { type: "boolean" },
+    ///     tags: { type: "array", items: { type: "string" } },
+    ///     author: { type: "object", fields: { name: { type: "string" } } }
+    ///   },
+    ///   required: ["title", "views"]
+    /// }
+    /// ```
+    #[napi]
+    pub async unsafe fn set_schema(&mut self, schema_json: Option<serde_json::Value>) -> Result<()> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        let schema_lock = state.schema.clone();
+        let mut schema_guard = schema_lock.write().await;
+
+        match schema_json {
+            Some(json) => {
+                // Parse and validate schema JSON
+                let schema: MetadataSchema = serde_json::from_value(json)
+                    .map_err(|e| VectorDBError::invalid_config(format!("Invalid schema format: {}", e)))?;
+
+                *schema_guard = Some(schema);
+            }
+            None => {
+                // Disable schema validation
+                *schema_guard = None;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Perform vacuum operation to physically remove soft-deleted vectors
+    ///
+    /// This operation:
+    /// - Removes deleted vectors from HNSW and IVF indices
+    /// - Frees up memory occupied by deleted vectors
+    /// - Reduces the size of persisted index data
+    /// - Returns statistics about removed vectors
+    ///
+    /// Should be called periodically after deletions to reclaim space.
+    /// Recommended before `saveToS5()` to minimize storage size.
+    ///
+    /// # Example
+    ///
+    /// ```javascript
+    /// // Delete some vectors
+    /// await session.deleteVector('vec-1');
+    /// await session.deleteByMetadata({ status: 'archived' });
+    ///
+    /// // Vacuum to reclaim space
+    /// const stats = await session.vacuum();
+    /// console.log(`Removed ${stats.total_removed} vectors`);
+    /// console.log(`HNSW: ${stats.hnsw_removed}, IVF: ${stats.ivf_removed}`);
+    ///
+    /// // Save with smaller manifest
+    /// await session.saveToS5();
+    /// ```
+    #[napi]
+    pub async unsafe fn vacuum(&mut self) -> Result<crate::types::VacuumStats> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Call vacuum on the hybrid index
+        let index = state.index.read().await;
+        let vacuum_stats = index.vacuum().await
+            .map_err(|e| VectorDBError::storage_error(format!("Vacuum failed: {}", e)))?;
+        drop(index);
+
+        // Convert to Node.js type
+        Ok(crate::types::VacuumStats {
+            hnsw_removed: vacuum_stats.hnsw_removed as u32,
+            ivf_removed: vacuum_stats.ivf_removed as u32,
+            total_removed: vacuum_stats.total_removed as u32,
         })
     }
 
@@ -401,6 +819,73 @@ impl VectorDBSession {
 
         Ok(())
     }
+}
+
+/// Check if metadata matches the given filter
+///
+/// Supports:
+/// - Simple field matching: { "userId": "user123" }
+/// - Multiple fields (AND logic): All fields must match
+/// - Nested field access with dot notation: { "user.id": "123" }
+/// - Array field matching: { "tags": "ai" } checks if "ai" is in the array
+fn matches_filter(metadata: &serde_json::Value, filter: &serde_json::Value) -> bool {
+    // If filter is not an object, no match
+    let filter_obj = match filter.as_object() {
+        Some(obj) => obj,
+        None => return false,
+    };
+
+    // Empty filter matches all (or none for safety - let's match all)
+    if filter_obj.is_empty() {
+        return true;
+    }
+
+    // Check each filter field (AND logic)
+    for (key, filter_value) in filter_obj.iter() {
+        let metadata_value = get_field_value(metadata, key);
+
+        match metadata_value {
+            Some(value) => {
+                // Check if values match
+                if !values_match(value, filter_value) {
+                    return false; // One field doesn't match, so overall no match
+                }
+            }
+            None => return false, // Field not found in metadata
+        }
+    }
+
+    true // All fields matched
+}
+
+/// Get field value from metadata, supporting dot notation for nested access
+fn get_field_value<'a>(metadata: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    // Check if path contains dots (nested access)
+    if path.contains('.') {
+        let parts: Vec<&str> = path.split('.').collect();
+        let mut current = metadata;
+
+        for part in parts {
+            current = current.get(part)?;
+        }
+
+        Some(current)
+    } else {
+        // Simple field access
+        metadata.get(path)
+    }
+}
+
+/// Check if two JSON values match
+/// Special case: if metadata value is an array, check if filter value is in the array
+fn values_match(metadata_value: &serde_json::Value, filter_value: &serde_json::Value) -> bool {
+    // If metadata value is an array, check if filter value is in the array
+    if let Some(arr) = metadata_value.as_array() {
+        return arr.contains(filter_value);
+    }
+
+    // Otherwise, exact equality check
+    metadata_value == filter_value
 }
 
 // Ensure cleanup on drop

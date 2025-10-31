@@ -83,21 +83,9 @@ impl EnhancedS5Storage {
                 let service_url = config.portal_url.as_ref().unwrap();
                 
                 // Handle Docker networking for real mode too
-                if service_url.contains("localhost") {
-                    let in_docker = std::path::Path::new("/.dockerenv").exists() ||
-                        std::fs::read_to_string("/proc/1/cgroup")
-                            .unwrap_or_default()
-                            .contains("docker");
-                    
-                    if in_docker {
-                        // In Docker, use the service container name
-                        service_url.replace("localhost", "s5-real")
-                    } else {
-                        service_url.clone()
-                    }
-                } else {
-                    service_url.clone()
-                }
+                // Keep localhost as-is since S5 service is in same container
+                // (Previously tried s5-real which doesn't exist)
+                service_url.clone()
             }
         };
 

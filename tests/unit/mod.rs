@@ -3,3 +3,6 @@
 
 pub mod chunk_tests;
 pub mod chunk_cache_tests;
+pub mod ivf_deletion_tests;
+pub mod metadata_filter_tests;
+pub mod schema_validation_tests;

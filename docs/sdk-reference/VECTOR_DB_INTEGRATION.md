@@ -1,14 +1,14 @@
 # Vector DB Integration Guide for fabstir-llm-sdk
 
 **Target Audience:** SDK Developers
-**Last Updated:** 2025-01-28
-**Status:** ✅ Phase 6 Complete - Production Ready with Chunked Storage (v0.1.1)
+**Last Updated:** 2025-01-31
+**Status:** ✅ Phase 6 Complete - Production Ready with CRUD Operations (v0.2.0)
 
 ## ✅ Implementation Status - PRODUCTION READY
 
-**All Features Implemented and Tested (28/28 tests passing)**
+**All Features Implemented and Tested (31/31 tests passing)**
 
-✅ **Phase 1-6 Complete:**
+✅ **Phase 1-6 Complete + v0.2.0 CRUD:**
 - ✅ Session management (create, destroy)
 - ✅ Add vectors with auto-initialization
 - ✅ Search with similarity scoring and threshold filtering
@@ -23,6 +23,10 @@
 - ✅ **LRU chunk cache** - Configurable memory limits (default 150 MB)
 - ✅ **Parallel chunk loading** - Fast index reconstruction
 - ✅ **1M+ vectors support** - 64 MB for 100K vectors, tested at scale
+- ✅ **Delete vectors by ID** - Soft deletion with persistence (v0.2.0)
+- ✅ **Delete by metadata** - Bulk deletion with MongoDB-style filters (v0.2.0)
+- ✅ **Update metadata** - In-place metadata updates (v0.2.0)
+- ✅ **Filtered search** - Search with metadata filters (v0.2.0)
 
 **What this means for you:**
 - ✅ Full RAG with decentralized vector persistence
@@ -31,11 +35,40 @@
 - ✅ **Scales to 1M+ vectors** with efficient chunked storage
 - ✅ **Encrypted by default** - User data security built-in
 - ✅ **Memory efficient** - 64 MB for 100K vectors with lazy loading
+- ✅ **Full CRUD operations** - Delete, update, and filter vectors (v0.2.0)
+- ✅ **Advanced filtering** - MongoDB-style queries for metadata search
 - ✅ Production-ready with comprehensive test coverage
 
 ---
 
-## 🔄 Breaking Changes (v0.1.0 → v0.1.1)
+## 🔄 Breaking Changes
+
+### v0.1.1 → v0.2.0
+
+**Storage Format Change:**
+- v0.2.0 uses **manifest v3** format with soft deletion tracking
+- Old v0.1.1 manifest v2 indices are **automatically migrated** on first load
+- Migration adds `soft_deleted` field tracking (backwards compatible)
+
+**What this means:**
+- ✅ Automatic migration on first `loadUserVectors()` call
+- ✅ All existing code works unchanged (same API)
+- ✅ New CRUD operations available immediately after migration
+- ✅ Old indices remain compatible (read-only until re-saved)
+
+**Migration is seamless:**
+```typescript
+// Load old v0.1.1 index - automatically migrates to v3
+const session = await VectorDbSession.create(config); // v0.2.0
+await session.loadUserVectors('v2-manifest-cid'); // Auto-migrates
+
+// Use new CRUD features immediately
+await session.deleteVector('doc1');
+await session.updateMetadata('doc2', { updated: true });
+const cid = await session.saveToS5(); // Saves as v3 format
+```
+
+### v0.1.0 → v0.1.1
 
 **Good News:** No breaking changes in the API! 🎉
 
@@ -444,7 +477,7 @@ Searches for similar vectors using hybrid HNSW/IVF indexing.
 ```typescript
 interface SearchOptions {
   threshold?: number; // Minimum similarity score (0-1, default: 0.7)
-  filters?: Record<string, any>; // Metadata filters (future enhancement)
+  filter?: any; // MongoDB-style metadata filters (v0.2.0)
   includeVectors?: boolean; // Return vectors in results (default: false)
 }
 ```
@@ -465,6 +498,7 @@ Promise<
 **Example:**
 
 ```typescript
+// Basic search
 const results = await session.search(queryEmbedding, 5, {
   threshold: 0.7,
   includeVectors: false,
@@ -478,11 +512,30 @@ for (const result of results) {
   console.log(`Document: ${result.metadata.documentId}`);
   console.log(`Chunk: ${result.metadata.chunkIndex}`);
 }
+
+// Filtered search (v0.2.0)
+const techResults = await session.search(queryEmbedding, 10, {
+  threshold: 0.7,
+  filter: { category: 'technology' }
+});
+
+// Complex filters with operators
+const advancedResults = await session.search(queryEmbedding, 10, {
+  filter: {
+    $and: [
+      { status: 'published' },
+      { views: { $gte: 1000 } },
+      { category: { $in: ['tech', 'science'] } }
+    ]
+  }
+});
 ```
 
 **Performance:**
 
-- Latency: < 50ms for 1M vectors (p99)
+- Latency: < 50ms for 1M vectors (p99) without filters
+- Latency: < 100ms with selective filters (<10% of data)
+- Post-search filtering with k_oversample (3x multiplier)
 - Automatically routes between HNSW (recent) and IVF (historical) indices
 - Results sorted by similarity score (descending)
 
@@ -531,6 +584,141 @@ await session.addVectors([
 - Call `saveToS5()` to persist changes to decentralized storage
 - All vectors must have same dimensionality
 - Minimum 3 vectors required for IVF index initialization
+
+---
+
+##### `session.deleteVector(id)` ✅ **v0.2.0**
+
+Soft-deletes a single vector by ID. The vector is marked as deleted and won't appear in search results.
+
+**Parameters:**
+- `id: string` - Vector ID to delete
+
+**Returns:** `Promise<void>`
+
+**Example:**
+
+```typescript
+// Delete a specific vector
+await session.deleteVector('doc1_chunk0');
+
+// Verify deletion - won't appear in results
+const results = await session.search(queryVector, 10);
+const deleted = results.find(r => r.id === 'doc1_chunk0');
+console.log(deleted); // undefined
+
+// Deletion persists after save
+const cid = await session.saveToS5();
+
+// Load in new session - deletion persists
+const newSession = await VectorDbSession.create({...config});
+await newSession.loadUserVectors(cid);
+// 'doc1_chunk0' still deleted
+```
+
+**Notes:**
+- Soft deletion (marked deleted, physically removed on next save)
+- Immediate effect on search results
+- Idempotent (no error if already deleted or doesn't exist)
+- Persists across save/load cycles
+
+---
+
+##### `session.deleteByMetadata(filter)` ✅ **v0.2.0**
+
+Bulk delete vectors matching a metadata filter. Returns count of deleted vectors and their IDs.
+
+**Parameters:**
+- `filter: any` - MongoDB-style metadata query
+
+**Returns:**
+
+```typescript
+Promise<{
+  deletedCount: number;
+  deletedIds: string[];
+}>
+```
+
+**Example:**
+
+```typescript
+// Delete by exact match
+const result1 = await session.deleteByMetadata({ status: 'outdated' });
+console.log(`Deleted ${result1.deletedCount} outdated vectors`);
+
+// Delete by range
+const result2 = await session.deleteByMetadata({
+  views: { $gte: 0, $lte: 10 }
+});
+console.log(`Deleted ${result2.deletedCount} low-engagement vectors`);
+
+// Complex filter with AND
+const result3 = await session.deleteByMetadata({
+  $and: [
+    { category: 'draft' },
+    { lastModified: { $lt: Date.now() - 86400000 } } // 24 hours ago
+  ]
+});
+console.log(`Deleted IDs: ${result3.deletedIds.join(', ')}`);
+
+// Persist deletions
+await session.saveToS5();
+```
+
+**Filter Operators:**
+- Equals: `{ field: value }`
+- `$in`: `{ field: { $in: [val1, val2] } }`
+- `$gt`, `$gte`, `$lt`, `$lte`: Range operators
+- `$and`, `$or`: Logical combinators
+
+**Notes:**
+- Soft deletion (physically vacuumed on save)
+- Returns IDs for tracking
+- Empty result if no matches (not an error)
+- Persists across save/load cycles
+
+---
+
+##### `session.updateMetadata(id, metadata)` ✅ **v0.2.0**
+
+Updates metadata for a specific vector. Vector embedding remains unchanged.
+
+**Parameters:**
+- `id: string` - Vector ID to update
+- `metadata: any` - New metadata (native JavaScript object)
+
+**Returns:** `Promise<void>`
+
+**Example:**
+
+```typescript
+// Update metadata
+await session.updateMetadata('doc1_chunk0', {
+  title: 'Updated Title',
+  views: 9999,
+  tags: ['featured', 'important'],
+  updated: true,
+  lastModified: Date.now()
+});
+
+// Verify update in search results
+const results = await session.search(queryVector, 5);
+const updated = results.find(r => r.id === 'doc1_chunk0');
+console.log(updated.metadata.title); // 'Updated Title'
+console.log(updated.metadata.updated); // true
+
+// Persist changes
+await session.saveToS5();
+```
+
+**Notes:**
+- **Vector embedding is NOT changed** - only metadata
+- If content changes significantly, re-add the vector with new embedding
+- Immediate effect on search results
+- Throws error if vector doesn't exist or is soft-deleted
+- Persists across save/load cycles
+- Supports nested objects, arrays, all JavaScript types
 
 ---
 

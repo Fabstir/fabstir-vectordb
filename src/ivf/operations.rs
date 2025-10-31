@@ -27,6 +27,13 @@ pub struct BatchInsertResult {
     pub errors: Vec<(VectorId, IVFError)>,
 }
 
+#[derive(Debug, Clone)]
+pub struct BatchDeleteResult {
+    pub successful: usize,
+    pub failed: usize,
+    pub errors: Vec<(VectorId, IVFError)>,
+}
+
 // Retraining results
 #[derive(Debug, Clone)]
 pub struct RetrainResult {
@@ -554,5 +561,85 @@ impl IVFIndex {
         let variance = sizes.iter().map(|&s| (s - mean).powi(2)).sum::<f32>() / n_clusters as f32;
 
         variance
+    }
+
+    // Deletion operations (v0.2.0)
+
+    /// Mark a vector as deleted (soft deletion)
+    pub fn mark_deleted(&mut self, id: &VectorId) -> Result<(), IVFError> {
+        // Check if vector exists in any inverted list
+        let mut found = false;
+        for inverted_list in self.inverted_lists.values() {
+            if inverted_list.vectors.contains_key(id) || inverted_list.chunk_refs.contains_key(id) {
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            return Err(IVFError::VectorNotFound(id.clone()));
+        }
+
+        // Add to deleted set
+        self.deleted.insert(id.clone());
+        Ok(())
+    }
+
+    /// Check if a vector is marked as deleted
+    pub fn is_deleted(&self, id: &VectorId) -> bool {
+        self.deleted.contains(id)
+    }
+
+    /// Batch delete multiple vectors
+    pub fn batch_delete(&mut self, ids: &[VectorId]) -> Result<BatchDeleteResult, OperationError> {
+        let mut result = BatchDeleteResult {
+            successful: 0,
+            failed: 0,
+            errors: Vec::new(),
+        };
+
+        for id in ids {
+            match self.mark_deleted(id) {
+                Ok(_) => result.successful += 1,
+                Err(e) => {
+                    result.failed += 1;
+                    result.errors.push((id.clone(), e));
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Get count of active (non-deleted) vectors
+    pub fn active_count(&self) -> usize {
+        self.total_vectors - self.deleted.len()
+    }
+
+    /// Get all deleted vector IDs (for persistence)
+    pub fn get_deleted_ids(&self) -> Vec<&VectorId> {
+        self.deleted.iter().collect()
+    }
+
+    /// Physically remove deleted vectors from inverted lists (hard deletion)
+    pub fn vacuum(&mut self) -> Result<usize, OperationError> {
+        let deleted_ids = self.deleted.clone();
+        let removed_count = deleted_ids.len();
+
+        // Remove deleted vectors from inverted lists
+        for inverted_list in self.inverted_lists.values_mut() {
+            for id in &deleted_ids {
+                inverted_list.vectors.remove(id);
+                inverted_list.chunk_refs.remove(id);
+            }
+        }
+
+        // Update total vector count
+        self.total_vectors -= removed_count;
+
+        // Clear deleted set
+        self.deleted.clear();
+
+        Ok(removed_count)
     }
 }

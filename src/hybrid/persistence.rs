@@ -228,6 +228,12 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
         let ivf_manifest = self.build_ivf_manifest(index, &manifest).await?;
         manifest.set_ivf_structure(ivf_manifest);
 
+        // Step 5.5: Collect deleted vectors from both indices
+        let deleted_vectors = index.get_deleted_vectors().await;
+        if !deleted_vectors.is_empty() {
+            manifest.deleted_vectors = Some(deleted_vectors);
+        }
+
         // Step 6: Save manifest as JSON (unencrypted for fast loading)
         let manifest_json = manifest
             .to_json()
@@ -485,7 +491,7 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
     ///
     /// # Returns
     /// A reconstructed HybridIndex ready for use
-    pub async fn load_index_chunked(&self, path: &str) -> Result<HybridIndex, PersistenceError> {
+    pub async fn load_index_chunked(&self, path: &str, config: HybridConfig) -> Result<HybridIndex, PersistenceError> {
         // Step 1: Load manifest.json
         let manifest_path = format!("{}/manifest.json", path);
         let manifest_data = self
@@ -512,7 +518,6 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
 
         // Step 3: Handle empty index case
         if manifest.total_vectors == 0 {
-            let config = HybridConfig::default();
             return Ok(HybridIndex::new(config));
         }
 
@@ -562,7 +567,7 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
         }
 
         // Step 6: Reconstruct HNSW index from saved nodes with full graph structure
-        let mut hnsw_index = crate::hnsw::core::HNSWIndex::new(metadata.config.hnsw_config.clone());
+        let mut hnsw_index = crate::hnsw::core::HNSWIndex::new(config.hnsw_config.clone());
 
         // Load HNSW nodes with full graph structure
         let hnsw_nodes_path = format!("{}/hnsw_nodes.cbor", path);
@@ -583,7 +588,7 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
         }
 
         // Step 7: Reconstruct IVF index from manifest + chunks
-        let mut ivf_index = crate::ivf::core::IVFIndex::new(metadata.config.ivf_config.clone());
+        let mut ivf_index = crate::ivf::core::IVFIndex::new(config.ivf_config.clone());
 
         if let Some(ivf_manifest) = &manifest.ivf_structure {
             // Set trained state with centroids
@@ -608,7 +613,7 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
             let mut inverted_lists: HashMap<crate::ivf::core::ClusterId, crate::ivf::core::InvertedList> = HashMap::new();
 
             // Initialize empty inverted lists for all clusters
-            for cluster_id in 0..metadata.config.ivf_config.n_clusters {
+            for cluster_id in 0..config.ivf_config.n_clusters {
                 inverted_lists.insert(
                     crate::ivf::core::ClusterId(cluster_id),
                     crate::ivf::core::InvertedList::new(),
@@ -660,8 +665,9 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
         let timestamps = serializable_timestamps.timestamps;
 
         // Step 9: Assemble HybridIndex using from_parts
+        // Use the passed config (allows tests to override)
         let hybrid_index = HybridIndex::from_parts(
-            metadata.config,
+            config,
             hnsw_index,
             ivf_index,
             timestamps,
@@ -669,6 +675,15 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
             metadata.historical_count,
         )
         .map_err(|e| PersistenceError::InvalidData(format!("Failed to reconstruct index: {}", e)))?;
+
+        // Step 10: Mark deleted vectors (from manifest v3+)
+        if let Some(deleted_ids) = &manifest.deleted_vectors {
+            for id_str in deleted_ids {
+                let vector_id = crate::core::types::VectorId::from_string(id_str);
+                // Best effort - ignore errors if vector doesn't exist
+                let _ = hybrid_index.delete(vector_id).await;
+            }
+        }
 
         Ok(hybrid_index)
     }

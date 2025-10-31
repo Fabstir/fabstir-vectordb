@@ -1,7 +1,7 @@
 # Performance Tuning Guide - Fabstir Vector Database
 
 **Target Audience:** Production Deployment Engineers
-**Last Updated:** 2025-01-28 | **Version:** v0.1.1 (Chunked Storage)
+**Last Updated:** 2025-01-31 | **Version:** v0.2.0 (CRUD Operations)
 
 Performance tuning guide based on actual Phase 6 production testing (100K vectors, 384-dim). All metrics are real measurements, not estimates.
 
@@ -14,6 +14,8 @@ Performance tuning guide based on actual Phase 6 production testing (100K vector
 - [Cache Size Optimization](#cache-size-optimization)
 - [Encryption Performance](#encryption-performance)
 - [Search Optimization](#search-optimization)
+- [Metadata Filtering Performance (v0.2.0)](#metadata-filtering-performance-v020)
+- [Deletion and Vacuum Strategy (v0.2.0)](#deletion-and-vacuum-strategy-v020)
 - [Memory Monitoring](#memory-monitoring)
 - [Benchmarking](#benchmarking)
 - [Production Checklist](#production-checklist)
@@ -217,6 +219,172 @@ class VectorService {
 }
 ```
 **Impact:** 100x faster per-query (no load overhead)
+
+---
+
+## Metadata Filtering Performance (v0.2.0)
+
+### Post-Search Filtering Strategy
+
+Filtered search uses **post-search filtering** with k_oversample:
+
+```typescript
+// For k=10 with filter, searches ~30 candidates (k × 3)
+const results = await session.search(queryVector, 10, {
+  filter: { category: 'technology' }
+});
+// Process: Search 30 → Filter by metadata → Return top 10
+```
+
+**k_oversample multiplier**: Default 3x (configurable in future versions)
+
+### Filter Selectivity Impact
+
+| Filter Type | Selectivity | Performance Impact | Example |
+|-------------|-------------|-------------------|---------|
+| Highly Selective | <1% of data | Minimal (<5ms) | `{ userId: 'specific-user' }` |
+| Selective | 1-10% of data | Low (<10ms) | `{ category: 'technology' }` |
+| Non-selective | 10-50% of data | Moderate (10-30ms) | `{ status: 'active' }` |
+| Very Non-selective | >50% of data | High (30-50ms) | `{ verified: true }` |
+
+### Optimization Strategies
+
+**Strategy 1: Use Selective Filters**
+
+```typescript
+// ❌ BAD: Non-selective filter (50% of data)
+const results = await session.search(queryVector, 10, {
+  filter: { language: 'en' }  // Most docs are English
+});
+
+// ✅ GOOD: Combine with selective filters
+const results = await session.search(queryVector, 10, {
+  filter: {
+    $and: [
+      { language: 'en' },
+      { category: 'specialized-topic' },  // Reduces to 5% of data
+      { premium: true }
+    ]
+  }
+});
+```
+
+**Strategy 2: Filter Early in AND Chains**
+
+```typescript
+// ❌ BAD: Non-selective filter first
+{ $and: [{ verified: true }, { userId: 'user123' }] }
+
+// ✅ GOOD: Most selective filter first
+{ $and: [{ userId: 'user123' }, { verified: true }] }
+```
+
+**Strategy 3: Use Range Filters Wisely**
+
+```typescript
+// Selective range (good)
+{ views: { $gte: 10000, $lte: 50000 } }  // 5-10% of data
+
+// Non-selective range (avoid if possible)
+{ views: { $gte: 0 } }  // Nearly all data
+```
+
+### Filter Operator Performance
+
+| Operator | Complexity | Notes |
+|----------|-----------|-------|
+| Equals | O(1) | Fastest |
+| `$in` | O(n) where n = array length | Fast for small arrays (<10 items) |
+| `$gt`, `$gte`, `$lt`, `$lte` | O(1) | Fast comparison |
+| `$and` | O(m) where m = conditions | Short-circuits on first false |
+| `$or` | O(m) where m = conditions | Evaluates all conditions |
+
+**Best Practices:**
+- Keep `$in` arrays small (<10 items)
+- Use `$and` for selective filters (short-circuits)
+- Avoid deeply nested combinators
+
+---
+
+## Deletion and Vacuum Strategy (v0.2.0)
+
+### Soft Deletion Performance
+
+Deletions are soft (mark deleted, remove on save):
+
+```typescript
+// Immediate (no search penalty)
+await session.deleteVector('doc1');  // ~1ms
+await session.deleteByMetadata({ status: 'old' });  // ~10-50ms
+
+// Search performance unaffected (deleted vectors filtered out)
+const results = await session.search(queryVector, 10);  // Same speed
+```
+
+**Impact:** Zero search penalty (deleted vectors skipped during filtering)
+
+### Vacuum (Physical Deletion)
+
+Physical removal happens on next `saveToS5()`:
+
+```typescript
+// Delete 1000 vectors
+await session.deleteByMetadata({ category: 'archived' });
+
+// Vacuum on save (removes deleted vectors from storage)
+const cid = await session.saveToS5();  // +200-500ms for vacuum
+```
+
+**When to Vacuum:**
+- After bulk deletions (>10% of dataset)
+- Before long-running sessions (reduces memory)
+- Off-peak hours (minimal user impact)
+
+### Deletion Best Practices
+
+**Strategy 1: Batch Deletions**
+
+```typescript
+// ❌ BAD: Individual deletions
+for (const id of idsToDelete) {
+  await session.deleteVector(id);  // 1000 × 1ms = 1s
+}
+
+// ✅ GOOD: Single filter-based deletion
+await session.deleteByMetadata({
+  id: { $in: idsToDelete }  // 10ms total
+});
+```
+
+**Strategy 2: Periodic Vacuum**
+
+```typescript
+// Track deletion count
+let deletionsSinceVacuum = 0;
+
+async function deleteWithVacuum(filter) {
+  const result = await session.deleteByMetadata(filter);
+  deletionsSinceVacuum += result.deletedCount;
+
+  // Vacuum if >10% deleted
+  if (deletionsSinceVacuum > totalVectors * 0.1) {
+    await session.saveToS5();  // Triggers vacuum
+    deletionsSinceVacuum = 0;
+  }
+}
+```
+
+**Strategy 3: Schedule Off-Peak Vacuum**
+
+```typescript
+// Daily vacuum during low-traffic hours
+schedule('0 3 * * *', async () => {  // 3 AM daily
+  if (session.hasPendingDeletions()) {
+    console.log('Running scheduled vacuum...');
+    await session.saveToS5();
+  }
+});
+```
 
 ---
 

@@ -154,6 +154,20 @@ pub struct AgeDistribution {
 }
 
 #[derive(Debug, Clone)]
+pub struct DeleteStats {
+    pub successful: usize,
+    pub failed: usize,
+    pub errors: Vec<(VectorId, String)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VacuumStats {
+    pub hnsw_removed: usize,
+    pub ivf_removed: usize,
+    pub total_removed: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct HybridSearchConfig {
     pub search_recent: bool,
     pub search_historical: bool,
@@ -444,6 +458,69 @@ impl HybridIndex {
         all_results.truncate(k);
 
         Ok(all_results)
+    }
+
+    /// Search with metadata filtering
+    ///
+    /// Implements k-oversampling strategy: retrieves more candidates than k,
+    /// filters by metadata, then truncates to k results.
+    ///
+    /// # Arguments
+    /// * `query` - Query vector
+    /// * `k` - Number of results to return
+    /// * `filter` - Optional metadata filter
+    /// * `metadata_map` - HashMap mapping vector IDs to metadata
+    ///
+    /// # Returns
+    /// Filtered search results, sorted by distance, limited to k results
+    ///
+    /// # Example
+    /// ```ignore
+    /// use serde_json::json;
+    /// use vector_db::core::metadata_filter::MetadataFilter;
+    ///
+    /// let filter = MetadataFilter::from_json(&json!({
+    ///     "category": "technology"
+    /// })).unwrap();
+    ///
+    /// let results = index.search_with_filter(&query, 10, Some(&filter), &metadata_map).await?;
+    /// ```
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<&crate::core::metadata_filter::MetadataFilter>,
+        metadata_map: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<Vec<SearchResult>, HybridError> {
+        // If no filter, use regular search
+        if filter.is_none() {
+            return self.search(query, k).await;
+        }
+
+        let filter = filter.unwrap();
+
+        // Use k-oversampling: search for more results to account for filtering
+        // Default multiplier of 3x (configurable in future)
+        let k_oversample = k * 3;
+
+        // Get oversampled results
+        let candidates = self.search(query, k_oversample).await?;
+
+        // Filter results by metadata
+        let mut filtered_results = Vec::new();
+        for result in candidates {
+            let vector_id_str = result.vector_id.to_string();
+            if let Some(metadata) = metadata_map.get(&vector_id_str) {
+                if filter.matches(metadata) {
+                    filtered_results.push(result);
+                }
+            }
+        }
+
+        // Truncate to k results (already sorted by distance from search)
+        filtered_results.truncate(k);
+
+        Ok(filtered_results)
     }
 
     pub async fn migrate_old_vectors(&self) -> Result<MigrationResult, HybridError> {
@@ -788,5 +865,172 @@ impl HybridIndex {
             historical_count: Arc::new(RwLock::new(historical_count)),
             chunk_loader,
         })
+    }
+
+    /// Delete a vector from the index (soft deletion)
+    pub async fn delete(&self, id: VectorId) -> Result<(), HybridError> {
+        // Check if vector exists by looking up timestamp
+        let timestamps = self.timestamps.read().await;
+        let timestamp = timestamps
+            .get(&id)
+            .ok_or_else(|| HybridError::IVF(format!("Vector {:?} not found", id)))?;
+
+        // Determine which index the vector is in based on its age
+        let now = Utc::now();
+        let age = now
+            .signed_duration_since(*timestamp)
+            .to_std()
+            .unwrap_or(Duration::from_secs(0));
+
+        drop(timestamps);
+
+        // Delete from appropriate index
+        if age < self.config.recent_threshold {
+            // Delete from HNSW (recent)
+            let mut recent = self.recent_index.write().await;
+            recent
+                .mark_deleted(&id)
+                .map_err(|e| HybridError::HNSW(e.to_string()))?;
+        } else {
+            // Delete from IVF (historical)
+            let mut historical = self.historical_index.write().await;
+            historical
+                .mark_deleted(&id)
+                .map_err(|e| HybridError::IVF(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Check if a vector is marked as deleted
+    pub async fn is_deleted(&self, id: &VectorId) -> bool {
+        // Check if vector exists in timestamps
+        let timestamps = self.timestamps.read().await;
+        if let Some(timestamp) = timestamps.get(id) {
+            // Determine which index to check
+            let now = Utc::now();
+            let age = now
+                .signed_duration_since(*timestamp)
+                .to_std()
+                .unwrap_or(Duration::from_secs(0));
+
+            drop(timestamps);
+
+            if age < self.config.recent_threshold {
+                // Check HNSW
+                let recent = self.recent_index.read().await;
+                recent.is_deleted(id)
+            } else {
+                // Check IVF
+                let historical = self.historical_index.read().await;
+                historical.is_deleted(id)
+            }
+        } else {
+            // Vector doesn't exist, so it's not deleted
+            false
+        }
+    }
+
+    /// Delete multiple vectors (batch operation)
+    pub async fn batch_delete(&self, ids: &[VectorId]) -> Result<DeleteStats, HybridError> {
+        let mut stats = DeleteStats {
+            successful: 0,
+            failed: 0,
+            errors: Vec::new(),
+        };
+
+        for id in ids {
+            match self.delete(id.clone()).await {
+                Ok(_) => stats.successful += 1,
+                Err(e) => {
+                    stats.failed += 1;
+                    stats.errors.push((id.clone(), e.to_string()));
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// Physically remove deleted vectors from both indices
+    pub async fn vacuum(&self) -> Result<VacuumStats, HybridError> {
+        // Vacuum HNSW index
+        let mut recent = self.recent_index.write().await;
+        let hnsw_removed = recent
+            .vacuum()
+            .map_err(|e| HybridError::HNSW(e.to_string()))?;
+        drop(recent);
+
+        // Vacuum IVF index
+        let mut historical = self.historical_index.write().await;
+        let ivf_removed = historical
+            .vacuum()
+            .map_err(|e| HybridError::IVF(e.to_string()))?;
+        drop(historical);
+
+        let total_removed = hnsw_removed + ivf_removed;
+
+        Ok(VacuumStats {
+            hnsw_removed,
+            ivf_removed,
+            total_removed,
+        })
+    }
+
+    /// Get count of active (non-deleted) vectors
+    pub async fn active_count(&self) -> usize {
+        // Get active count from both indices
+        let recent = self.recent_index.read().await;
+        let recent_active = recent.active_count();
+        drop(recent);
+
+        let historical = self.historical_index.read().await;
+        let historical_active = historical.active_count();
+        drop(historical);
+
+        recent_active + historical_active
+    }
+
+    /// Get deletion statistics (hnsw_deleted, ivf_deleted, total_deleted)
+    pub async fn deletion_stats(&self) -> (usize, usize, usize) {
+        // Get deleted count from HNSW index
+        let recent = self.recent_index.read().await;
+        let hnsw_nodes = recent.get_all_nodes();
+        let hnsw_deleted = hnsw_nodes.iter().filter(|n| n.is_deleted()).count();
+        drop(recent);
+
+        // Get deleted count from IVF index
+        let historical = self.historical_index.read().await;
+        let ivf_deleted = historical.deleted.len();
+        drop(historical);
+
+        let total_deleted = hnsw_deleted + ivf_deleted;
+
+        (hnsw_deleted, ivf_deleted, total_deleted)
+    }
+
+    /// Get all deleted vector IDs from both indices
+    /// Used for persistence - save deleted vectors in manifest
+    pub async fn get_deleted_vectors(&self) -> Vec<String> {
+        let mut deleted_ids = Vec::new();
+
+        // Get deleted vectors from HNSW index
+        let recent = self.recent_index.read().await;
+        let hnsw_nodes = recent.get_all_nodes();
+        for node in hnsw_nodes {
+            if node.is_deleted() {
+                deleted_ids.push(node.id().to_string());
+            }
+        }
+        drop(recent);
+
+        // Get deleted vectors from IVF index
+        let historical = self.historical_index.read().await;
+        for deleted_id in historical.get_deleted_ids() {
+            deleted_ids.push(deleted_id.to_string());
+        }
+        drop(historical);
+
+        deleted_ids
     }
 }
