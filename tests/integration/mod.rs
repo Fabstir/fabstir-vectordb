@@ -11,3 +11,4 @@ pub mod ivf_lazy_tests;
 pub mod hybrid_lazy_tests;
 pub mod large_dataset_tests;
 pub mod metadata_update_persistence_tests;
+pub mod search_filter_tests;

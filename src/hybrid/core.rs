@@ -460,6 +460,69 @@ impl HybridIndex {
         Ok(all_results)
     }
 
+    /// Search with metadata filtering
+    ///
+    /// Implements k-oversampling strategy: retrieves more candidates than k,
+    /// filters by metadata, then truncates to k results.
+    ///
+    /// # Arguments
+    /// * `query` - Query vector
+    /// * `k` - Number of results to return
+    /// * `filter` - Optional metadata filter
+    /// * `metadata_map` - HashMap mapping vector IDs to metadata
+    ///
+    /// # Returns
+    /// Filtered search results, sorted by distance, limited to k results
+    ///
+    /// # Example
+    /// ```ignore
+    /// use serde_json::json;
+    /// use vector_db::core::metadata_filter::MetadataFilter;
+    ///
+    /// let filter = MetadataFilter::from_json(&json!({
+    ///     "category": "technology"
+    /// })).unwrap();
+    ///
+    /// let results = index.search_with_filter(&query, 10, Some(&filter), &metadata_map).await?;
+    /// ```
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<&crate::core::metadata_filter::MetadataFilter>,
+        metadata_map: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<Vec<SearchResult>, HybridError> {
+        // If no filter, use regular search
+        if filter.is_none() {
+            return self.search(query, k).await;
+        }
+
+        let filter = filter.unwrap();
+
+        // Use k-oversampling: search for more results to account for filtering
+        // Default multiplier of 3x (configurable in future)
+        let k_oversample = k * 3;
+
+        // Get oversampled results
+        let candidates = self.search(query, k_oversample).await?;
+
+        // Filter results by metadata
+        let mut filtered_results = Vec::new();
+        for result in candidates {
+            let vector_id_str = result.vector_id.to_string();
+            if let Some(metadata) = metadata_map.get(&vector_id_str) {
+                if filter.matches(metadata) {
+                    filtered_results.push(result);
+                }
+            }
+        }
+
+        // Truncate to k results (already sorted by distance from search)
+        filtered_results.truncate(k);
+
+        Ok(filtered_results)
+    }
+
     pub async fn migrate_old_vectors(&self) -> Result<MigrationResult, HybridError> {
         let count = self
             .migrate_with_threshold(self.config.recent_threshold)
