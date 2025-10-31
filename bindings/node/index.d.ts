@@ -32,6 +32,15 @@ export interface SearchOptions {
   threshold?: number;
   /** Include vectors in results (default: false) */
   includeVectors?: boolean;
+  /**
+   * Metadata filter (MongoDB-style query, optional)
+   * Examples:
+   * - `{ "category": "technology" }` - Equals filter
+   * - `{ "status": { "$in": ["active", "pending"] } }` - In filter
+   * - `{ "views": { "$gte": 1000, "$lte": 5000 } }` - Range filter
+   * - `{ "$and": [{ "category": "tech" }, { "published": true }] }` - And combinator
+   */
+  filter?: any;
 }
 export interface VectorInput {
   /** Unique identifier */

@@ -181,15 +181,39 @@ impl VectorDBSession {
             .and_then(|o| o.threshold)
             .unwrap_or(0.7) as f32; // Convert to f32 for comparison
 
-        // Perform search using HybridIndex
-        let index = state.index.read().await;
-        let results = index.search(&query_f32, k as usize)
-            .await
-            .map_err(|e| VectorDBError::index_error(format!("Search failed: {}", e)))?;
-        drop(index); // Release read lock
+        // Extract and parse filter from options
+        let filter = if let Some(filter_json) = options.as_ref().and_then(|o| o.filter.as_ref()) {
+            use vector_db::core::metadata_filter::MetadataFilter;
 
-        // Get metadata map
+            match MetadataFilter::from_json(filter_json) {
+                Ok(f) => Some(f),
+                Err(e) => {
+                    return Err(VectorDBError::invalid_input(
+                        format!("Invalid filter: {}", e)
+                    ).into());
+                }
+            }
+        } else {
+            None
+        };
+
+        // Get metadata map (needed for both filtering and result formatting)
         let metadata_map = state.metadata.read().await;
+
+        // Perform search using HybridIndex (with or without filter)
+        let index = state.index.read().await;
+        let results = if filter.is_some() {
+            // Use filtered search with k-oversampling
+            index.search_with_filter(&query_f32, k as usize, filter.as_ref(), &*metadata_map)
+                .await
+                .map_err(|e| VectorDBError::index_error(format!("Filtered search failed: {}", e)))?
+        } else {
+            // Use regular search (backward compatibility)
+            index.search(&query_f32, k as usize)
+                .await
+                .map_err(|e| VectorDBError::index_error(format!("Search failed: {}", e)))?
+        };
+        drop(index); // Release read lock
 
         // Convert results to SearchResult format
         let search_results: Vec<SearchResult> = results

@@ -47,6 +47,14 @@ pub struct SearchOptions {
 
     /// Include vectors in results (default: false)
     pub include_vectors: Option<bool>,
+
+    /// Metadata filter (MongoDB-style query, optional)
+    /// Examples:
+    /// - `{ "category": "technology" }` - Equals filter
+    /// - `{ "status": { "$in": ["active", "pending"] } }` - In filter
+    /// - `{ "views": { "$gte": 1000, "$lte": 5000 } }` - Range filter
+    /// - `{ "$and": [{ "category": "tech" }, { "published": true }] }` - And combinator
+    pub filter: Option<serde_json::Value>,
 }
 
 #[napi(object)]

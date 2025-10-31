@@ -40,6 +40,10 @@ impl VectorDBError {
     pub fn session_error(message: impl Into<String>) -> Self {
         Self::new(message, "SESSION_ERROR")
     }
+
+    pub fn invalid_input(message: impl Into<String>) -> Self {
+        Self::new(message, "INVALID_INPUT")
+    }
 }
 
 impl std::fmt::Display for VectorDBError {

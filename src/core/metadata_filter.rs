@@ -188,6 +188,13 @@ impl MetadataFilter {
                     }
                 }
 
+                // Empty object is invalid - must have at least one operator or value
+                if ops.is_empty() {
+                    return Err(FilterError::InvalidSyntax(
+                        format!("Empty object for field '{}' - must specify a value or operator", field),
+                    ));
+                }
+
                 // If no recognized operators, treat as equals with nested object
                 Ok(MetadataFilter::Equals {
                     field: field.to_string(),

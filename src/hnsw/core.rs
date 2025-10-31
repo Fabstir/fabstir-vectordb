@@ -293,7 +293,14 @@ impl HNSWIndex {
                     self.config.max_connections
                 };
 
-                let candidates = self.search_layer(&node.vector, entry_point.clone(), ef, lc);
+                // Use the nearest neighbor at this layer as starting point for better connectivity
+                let search_start = if lc <= search_level && !current_nearest.is_empty() {
+                    current_nearest[0].id.clone()
+                } else {
+                    entry_point.clone()
+                };
+
+                let candidates = self.search_layer(&node.vector, search_start, ef, lc);
                 let neighbors = self.select_neighbors(&candidates, m);
 
                 // Add bidirectional connections
