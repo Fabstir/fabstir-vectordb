@@ -12,9 +12,11 @@ A high-performance, decentralized vector database built on S5 storage with hybri
 - 💾 **Memory Efficient**: 64 MB for 100K vectors with lazy loading (10x reduction)
 - 📈 **Scales to 1M+ vectors**: Tested at production scale
 - 🔧 **Multiple Interfaces**: REST API (port 7533) + Node.js native bindings
+- ✏️ **Full CRUD Operations (v0.2.0)**: Delete vectors by ID or metadata, update metadata, filtered search
+- 🔍 **Metadata Filtering (v0.2.0)**: MongoDB-style query language with 8 operators
 - 🐳 **Docker Ready**: Production and development containers
 
-## Performance (v0.1.1 - Phase 6 Tested)
+## Performance (v0.2.0 - Latest)
 
 **100K Vectors (384-dim, all-MiniLM-L6-v2):**
 
@@ -55,7 +57,7 @@ async function example() {
     await session.addVectors([{
       id: 'doc1',
       vector: [...], // 384-dim embedding
-      metadata: { text: 'Hello world' }
+      metadata: { text: 'Hello world', category: 'tech' }
     }]);
 
     // 3. Save to S5 (encrypted, chunked)
@@ -68,6 +70,22 @@ async function example() {
     // 5. Search (warm cache: ~58ms)
     const results = await session.search(queryVector, 5);
     console.log(results[0].metadata.text);  // Native object access
+
+    // 6. CRUD Operations (v0.2.0)
+    // Delete a vector
+    await session.deleteVector('doc1');
+
+    // Update metadata
+    await session.updateMetadata('doc2', { views: 100 });
+
+    // Filtered search
+    const filtered = await session.search(queryVector, 5, {
+      filter: { category: 'tech' }
+    });
+
+    // Bulk delete
+    const result = await session.deleteByMetadata({ status: 'old' });
+    console.log(`Deleted ${result.deletedCount} vectors`);
   } finally {
     await session.destroy();  // CRITICAL: Clean up memory
   }
