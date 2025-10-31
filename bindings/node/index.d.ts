@@ -61,22 +61,36 @@ export interface SearchResult {
   vector?: Array<number>;
 }
 export interface SessionStats {
-  /** Total vectors in index */
+  /** Total active (non-deleted) vectors in index */
   vectorCount: number;
   /** Current memory usage in MB */
   memoryUsageMb: number;
   /** Active index type */
   indexType: string;
-  /** Vectors in HNSW index */
+  /** Active vectors in HNSW index */
   hnswVectorCount?: number;
-  /** Vectors in IVF index */
+  /** Active vectors in IVF index */
   ivfVectorCount?: number;
+  /** Number of soft-deleted vectors in HNSW index */
+  hnswDeletedCount?: number;
+  /** Number of soft-deleted vectors in IVF index */
+  ivfDeletedCount?: number;
+  /** Total number of soft-deleted vectors */
+  totalDeletedCount?: number;
 }
 export interface DeleteResult {
   /** Number of vectors successfully deleted */
   deletedCount: number;
   /** IDs of deleted vectors */
   deletedIds: Array<string>;
+}
+export interface VacuumStats {
+  /** Number of vectors removed from HNSW index */
+  hnswRemoved: number;
+  /** Number of vectors removed from IVF index */
+  ivfRemoved: number;
+  /** Total number of vectors removed */
+  totalRemoved: number;
 }
 export declare function getVersion(): string;
 export declare function getPlatformInfo(): PlatformInfo;
@@ -194,6 +208,35 @@ export declare class VectorDbSession {
    * ```
    */
   setSchema(schemaJson?: any | undefined | null): Promise<void>;
+  /**
+   * Perform vacuum operation to physically remove soft-deleted vectors
+   *
+   * This operation:
+   * - Removes deleted vectors from HNSW and IVF indices
+   * - Frees up memory occupied by deleted vectors
+   * - Reduces the size of persisted index data
+   * - Returns statistics about removed vectors
+   *
+   * Should be called periodically after deletions to reclaim space.
+   * Recommended before `saveToS5()` to minimize storage size.
+   *
+   * # Example
+   *
+   * ```javascript
+   * // Delete some vectors
+   * await session.deleteVector('vec-1');
+   * await session.deleteByMetadata({ status: 'archived' });
+   *
+   * // Vacuum to reclaim space
+   * const stats = await session.vacuum();
+   * console.log(`Removed ${stats.total_removed} vectors`);
+   * console.log(`HNSW: ${stats.hnsw_removed}, IVF: ${stats.ivf_removed}`);
+   *
+   * // Save with smaller manifest
+   * await session.saveToS5();
+   * ```
+   */
+  vacuum(): Promise<VacuumStats>;
   /** Destroy session and clear memory */
   destroy(): Promise<void>;
 }

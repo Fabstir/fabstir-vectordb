@@ -86,7 +86,7 @@ pub struct SearchResult {
 
 #[napi(object)]
 pub struct SessionStats {
-    /// Total vectors in index
+    /// Total active (non-deleted) vectors in index
     pub vector_count: u32,
 
     /// Current memory usage in MB
@@ -95,11 +95,20 @@ pub struct SessionStats {
     /// Active index type
     pub index_type: String,
 
-    /// Vectors in HNSW index
+    /// Active vectors in HNSW index
     pub hnsw_vector_count: Option<u32>,
 
-    /// Vectors in IVF index
+    /// Active vectors in IVF index
     pub ivf_vector_count: Option<u32>,
+
+    /// Number of soft-deleted vectors in HNSW index
+    pub hnsw_deleted_count: Option<u32>,
+
+    /// Number of soft-deleted vectors in IVF index
+    pub ivf_deleted_count: Option<u32>,
+
+    /// Total number of soft-deleted vectors
+    pub total_deleted_count: Option<u32>,
 }
 
 #[napi(object)]
@@ -109,4 +118,16 @@ pub struct DeleteResult {
 
     /// IDs of deleted vectors
     pub deleted_ids: Vec<String>,
+}
+
+#[napi(object)]
+pub struct VacuumStats {
+    /// Number of vectors removed from HNSW index
+    pub hnsw_removed: u32,
+
+    /// Number of vectors removed from IVF index
+    pub ivf_removed: u32,
+
+    /// Total number of vectors removed
+    pub total_removed: u32,
 }

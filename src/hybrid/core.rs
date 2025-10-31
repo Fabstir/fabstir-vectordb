@@ -991,6 +991,24 @@ impl HybridIndex {
         recent_active + historical_active
     }
 
+    /// Get deletion statistics (hnsw_deleted, ivf_deleted, total_deleted)
+    pub async fn deletion_stats(&self) -> (usize, usize, usize) {
+        // Get deleted count from HNSW index
+        let recent = self.recent_index.read().await;
+        let hnsw_nodes = recent.get_all_nodes();
+        let hnsw_deleted = hnsw_nodes.iter().filter(|n| n.is_deleted()).count();
+        drop(recent);
+
+        // Get deleted count from IVF index
+        let historical = self.historical_index.read().await;
+        let ivf_deleted = historical.deleted.len();
+        drop(historical);
+
+        let total_deleted = hnsw_deleted + ivf_deleted;
+
+        (hnsw_deleted, ivf_deleted, total_deleted)
+    }
+
     /// Get all deleted vector IDs from both indices
     /// Used for persistence - save deleted vectors in manifest
     pub async fn get_deleted_vectors(&self) -> Vec<String> {

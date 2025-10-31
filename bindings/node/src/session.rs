@@ -664,12 +664,18 @@ impl VectorDBSession {
         let active_count = index.active_count().await;
         let stats = index.get_stats();
 
+        // Get deletion stats
+        let (hnsw_deleted, ivf_deleted, total_deleted) = index.deletion_stats().await;
+
         Ok(SessionStats {
             vector_count: active_count as u32,
             memory_usage_mb: ((stats.recent_index_memory + stats.historical_index_memory) as f64) / 1_048_576.0,
             index_type: "hybrid".to_string(),
             hnsw_vector_count: Some(stats.recent_vectors as u32),
             ivf_vector_count: Some(stats.historical_vectors as u32),
+            hnsw_deleted_count: Some(hnsw_deleted as u32),
+            ivf_deleted_count: Some(ivf_deleted as u32),
+            total_deleted_count: Some(total_deleted as u32),
         })
     }
 
@@ -714,6 +720,51 @@ impl VectorDBSession {
         }
 
         Ok(())
+    }
+
+    /// Perform vacuum operation to physically remove soft-deleted vectors
+    ///
+    /// This operation:
+    /// - Removes deleted vectors from HNSW and IVF indices
+    /// - Frees up memory occupied by deleted vectors
+    /// - Reduces the size of persisted index data
+    /// - Returns statistics about removed vectors
+    ///
+    /// Should be called periodically after deletions to reclaim space.
+    /// Recommended before `saveToS5()` to minimize storage size.
+    ///
+    /// # Example
+    ///
+    /// ```javascript
+    /// // Delete some vectors
+    /// await session.deleteVector('vec-1');
+    /// await session.deleteByMetadata({ status: 'archived' });
+    ///
+    /// // Vacuum to reclaim space
+    /// const stats = await session.vacuum();
+    /// console.log(`Removed ${stats.total_removed} vectors`);
+    /// console.log(`HNSW: ${stats.hnsw_removed}, IVF: ${stats.ivf_removed}`);
+    ///
+    /// // Save with smaller manifest
+    /// await session.saveToS5();
+    /// ```
+    #[napi]
+    pub async unsafe fn vacuum(&mut self) -> Result<crate::types::VacuumStats> {
+        let state = self.state.as_mut()
+            .ok_or_else(|| VectorDBError::session_error("Session already destroyed"))?;
+
+        // Call vacuum on the hybrid index
+        let index = state.index.read().await;
+        let vacuum_stats = index.vacuum().await
+            .map_err(|e| VectorDBError::storage_error(format!("Vacuum failed: {}", e)))?;
+        drop(index);
+
+        // Convert to Node.js type
+        Ok(crate::types::VacuumStats {
+            hnsw_removed: vacuum_stats.hnsw_removed as u32,
+            ivf_removed: vacuum_stats.ivf_removed as u32,
+            total_removed: vacuum_stats.total_removed as u32,
+        })
     }
 
     /// Destroy session and clear memory
