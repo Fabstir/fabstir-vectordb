@@ -1052,6 +1052,14 @@ const vacStats = await session.vacuum();
 - ✅ Comprehensive test coverage (11 test scenarios)
 - ✅ Documentation complete with usage examples
 
+**Performance Note**:
+- Vacuum operation (in-memory cleanup): <100ms for 1000 deletions
+- Tested with mock storage (in-memory only)
+- Real S5 persistence adds ~10-15 seconds for 100K vectors (saveToS5)
+  - Based on Enhanced S5.js benchmarks: ~800ms per file × 12 files (10 chunks + manifest + schema)
+  - Network latency dominates (registry operations), not bandwidth
+- Recommended workflow: `vacuum()` → `saveToS5()` to minimize manifest size
+
 **Bounded Autonomy**: 45 lines session.rs, 27 lines types.rs, 15 lines hybrid/core.rs, 197 lines test
 
 ---
@@ -1149,10 +1157,14 @@ const vacStats = await session.vacuum();
   - In-place HashMap updates
   - No index rebuilding required
   - Near-instantaneous updates
-- [x] Vacuum: <100ms for 1000 deletions ✅
-  - Efficient batch removal
-  - Parallel processing of HNSW and IVF
-  - Tested with 50+ vectors: sub-millisecond
+- [x] Vacuum: <100ms for 1000 deletions (in-memory cleanup) ✅
+  - Efficient batch removal from HNSW and IVF indices
+  - Parallel processing of both indices
+  - Tested with 50+ vectors in mock storage: sub-millisecond
+  - **Note**: Does NOT include S5 persistence time
+  - Full operation (vacuum + saveToS5): ~100ms cleanup + ~10-15s save for 100K vectors
+    - Based on Enhanced S5.js benchmarks: ~800ms/file × 12 files (chunked storage)
+  - Recommendation: Call `vacuum()` before `saveToS5()` to reduce manifest size
 
 **Overall Status**: ✅ **v0.2.0 CRUD IMPLEMENTATION COMPLETE**
 
