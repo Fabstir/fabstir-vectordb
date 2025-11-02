@@ -42,6 +42,7 @@ pub struct HybridConfig {
     pub ivf_config: IVFConfig,
     pub migration_batch_size: usize,
     pub auto_migrate: bool,
+    pub min_ivf_training_size: usize, // Minimum vectors before IVF training (default: 10)
 }
 
 // Helper module for std::time::Duration serialization
@@ -78,6 +79,7 @@ impl Default for HybridConfig {
             ivf_config,
             migration_batch_size: 100,
             auto_migrate: true,
+            min_ivf_training_size: 10, // Minimum vectors before IVF training
         }
     }
 }
@@ -203,6 +205,7 @@ pub struct HybridIndex {
     historical_index: Arc<RwLock<IVFIndex>>,
     pub timestamps: Arc<RwLock<std::collections::HashMap<VectorId, DateTime<Utc>>>>,
     initialized: bool,
+    ivf_trained: bool, // Tracks whether IVF index has been trained
     recent_count: Arc<RwLock<usize>>,
     historical_count: Arc<RwLock<usize>>,
     /// Chunk loader for lazy loading vectors from S5 storage (shared between HNSW and IVF)
@@ -220,6 +223,7 @@ impl HybridIndex {
             historical_index,
             timestamps: Arc::new(RwLock::new(std::collections::HashMap::new())),
             initialized: false,
+            ivf_trained: false, // Start in HNSW-only mode
             recent_count: Arc::new(RwLock::new(0)),
             historical_count: Arc::new(RwLock::new(0)),
             chunk_loader: None,
@@ -244,6 +248,7 @@ impl HybridIndex {
             historical_index,
             timestamps: Arc::new(RwLock::new(std::collections::HashMap::new())),
             initialized: false,
+            ivf_trained: false, // Start in HNSW-only mode
             recent_count: Arc::new(RwLock::new(0)),
             historical_count: Arc::new(RwLock::new(0)),
             chunk_loader,
@@ -255,7 +260,15 @@ impl HybridIndex {
     }
 
     pub async fn initialize(&mut self, training_data: Vec<Vec<f32>>) -> Result<(), HybridError> {
-        // Train the IVF index
+        // Check if we have enough data for IVF training
+        if training_data.len() < self.config.min_ivf_training_size {
+            // HNSW-only mode: Skip IVF training for small datasets
+            self.ivf_trained = false;
+            self.initialized = true;
+            return Ok(());
+        }
+
+        // Normal mode: Train the IVF index
         let mut historical = self.historical_index.write().await;
         historical
             .train(&training_data)
@@ -271,6 +284,7 @@ impl HybridIndex {
         }
         drop(historical);
 
+        self.ivf_trained = true;
         self.initialized = true;
         Ok(())
     }
@@ -357,15 +371,8 @@ impl HybridIndex {
         }
         drop(timestamps);
 
-        // Determine if vector is recent or historical
-        let now = Utc::now();
-        let age = now
-            .signed_duration_since(timestamp)
-            .to_std()
-            .unwrap_or(Duration::from_secs(0));
-
-        if age < self.config.recent_threshold {
-            // Insert into HNSW (recent)
+        // HNSW-only mode: Route all vectors to HNSW if IVF not trained
+        if !self.ivf_trained {
             let mut recent = self.recent_index.write().await;
             recent
                 .insert(id.clone(), vector)
@@ -374,14 +381,32 @@ impl HybridIndex {
             let mut count = self.recent_count.write().await;
             *count += 1;
         } else {
-            // Insert into IVF (historical)
-            let mut historical = self.historical_index.write().await;
-            historical
-                .insert(id.clone(), vector)
-                .map_err(|e| HybridError::IVF(e.to_string()))?;
+            // Normal mode: Determine if vector is recent or historical
+            let now = Utc::now();
+            let age = now
+                .signed_duration_since(timestamp)
+                .to_std()
+                .unwrap_or(Duration::from_secs(0));
 
-            let mut count = self.historical_count.write().await;
-            *count += 1;
+            if age < self.config.recent_threshold {
+                // Insert into HNSW (recent)
+                let mut recent = self.recent_index.write().await;
+                recent
+                    .insert(id.clone(), vector)
+                    .map_err(|e| HybridError::HNSW(e.to_string()))?;
+
+                let mut count = self.recent_count.write().await;
+                *count += 1;
+            } else {
+                // Insert into IVF (historical)
+                let mut historical = self.historical_index.write().await;
+                historical
+                    .insert(id.clone(), vector)
+                    .map_err(|e| HybridError::IVF(e.to_string()))?;
+
+                let mut count = self.historical_count.write().await;
+                *count += 1;
+            }
         }
 
         // Store timestamp
@@ -436,8 +461,8 @@ impl HybridIndex {
             }
         }
 
-        // Search historical vectors
-        if config.search_historical {
+        // Search historical vectors (only if IVF is trained)
+        if config.search_historical && self.ivf_trained {
             let historical = self.historical_index.read().await;
             // Use custom n_probe if specified
             if config.ivf_n_probe != historical.config().n_probe {
@@ -809,6 +834,10 @@ impl HybridIndex {
         self.historical_count.try_read().map(|c| *c).unwrap_or(0)
     }
 
+    pub fn ivf_trained(&self) -> bool {
+        self.ivf_trained
+    }
+
     /// Get timestamps (for persistence)
     pub async fn get_timestamps(&self) -> HashMap<VectorId, DateTime<Utc>> {
         self.timestamps.read().await.clone()
@@ -832,6 +861,7 @@ impl HybridIndex {
         timestamps: HashMap<VectorId, DateTime<Utc>>,
         recent_count: usize,
         historical_count: usize,
+        ivf_trained: bool,
     ) -> Result<Self, HybridError> {
         Ok(Self {
             config,
@@ -839,6 +869,7 @@ impl HybridIndex {
             historical_index: Arc::new(RwLock::new(historical_index)),
             timestamps: Arc::new(RwLock::new(timestamps)),
             initialized: true,
+            ivf_trained,
             recent_count: Arc::new(RwLock::new(recent_count)),
             historical_count: Arc::new(RwLock::new(historical_count)),
             chunk_loader: None,
@@ -853,6 +884,7 @@ impl HybridIndex {
         timestamps: HashMap<VectorId, DateTime<Utc>>,
         recent_count: usize,
         historical_count: usize,
+        ivf_trained: bool,
         chunk_loader: Option<Arc<ChunkLoader>>,
     ) -> Result<Self, HybridError> {
         Ok(Self {
@@ -861,6 +893,7 @@ impl HybridIndex {
             historical_index: Arc::new(RwLock::new(historical_index)),
             timestamps: Arc::new(RwLock::new(timestamps)),
             initialized: true,
+            ivf_trained,
             recent_count: Arc::new(RwLock::new(recent_count)),
             historical_count: Arc::new(RwLock::new(historical_count)),
             chunk_loader,

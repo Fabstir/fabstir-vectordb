@@ -62,6 +62,8 @@ pub struct HybridMetadata {
     pub historical_count: usize,
     pub total_vectors: usize,
     pub timestamp: DateTime<Utc>,
+    #[serde(default)] // For backward compatibility with older serialized data
+    pub ivf_trained: bool,
 }
 
 impl HybridMetadata {
@@ -75,6 +77,7 @@ impl HybridMetadata {
             historical_count: stats.historical_vectors,
             total_vectors: stats.total_vectors,
             timestamp: Utc::now(),
+            ivf_trained: index.ivf_trained(),
         }
     }
 
@@ -673,6 +676,7 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
             timestamps,
             metadata.recent_count,
             metadata.historical_count,
+            metadata.ivf_trained,
         )
         .map_err(|e| PersistenceError::InvalidData(format!("Failed to reconstruct index: {}", e)))?;
 
@@ -730,6 +734,7 @@ impl<S: S5Storage + Clone + 'static> HybridPersister<S> {
             serializable_timestamps.timestamps,
             metadata.recent_count,
             metadata.historical_count,
+            metadata.ivf_trained,
         )
         .map_err(|e| PersistenceError::InvalidData(format!("Failed to reconstruct index: {}", e)))
     }

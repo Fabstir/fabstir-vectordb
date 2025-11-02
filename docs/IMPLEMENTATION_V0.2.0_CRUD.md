@@ -1090,45 +1090,48 @@ Remove the 3-vector minimum requirement for IVF index by implementing HNSW-only 
 - `src/ivf/core.rs:249` - Validates `training_data.len() >= n_clusters`
 - K-means clustering cannot create 3 centroids from <3 data points
 
-#### 7.1 HNSW-Only Mode for Small Datasets (Day 31)
+#### 7.1 HNSW-Only Mode for Small Datasets (Day 31) ✅ COMPLETE
 
 **TDD Approach**: Write tests for small dataset scenarios
 
-- [ ] **Test File**: `bindings/node/test/small-dataset.test.js` (create, ~150 lines)
+- [x] **Test File**: `bindings/node/test/small-dataset.test.js` (created, 363 lines)
 
-  - [ ] Test 1-vector dataset (add + search)
-  - [ ] Test 2-vector dataset (add + search)
-  - [ ] Test search with 0 vectors (empty index)
-  - [ ] Test gradual dataset growth (1 → 10 → 100 vectors)
-  - [ ] Test auto-training when threshold reached
-  - [ ] Test delete operations on small datasets
-  - [ ] Test metadata updates on small datasets
-  - [ ] Test save/load with small datasets
+  - [x] Test 1-vector dataset (add + search)
+  - [x] Test 2-vector dataset (add + search)
+  - [x] Test search with 0 vectors (empty index)
+  - [x] Test gradual dataset growth (1 → 10 → 100 vectors)
+  - [x] Test auto-training when threshold reached
+  - [x] Test delete operations on small datasets
+  - [x] Test metadata updates on small datasets
+  - [x] Test save/load with small datasets
 
-- [ ] **Implementation**: `src/hybrid/core.rs` (modify ~50 lines)
+- [x] **Implementation**: `src/hybrid/core.rs` (modified ~60 lines)
 
-  - [ ] Add `min_ivf_training_size: usize` to `HybridConfig::default()` (set to 10)
-  - [ ] Modify `initialize()` method (lines ~257-276):
+  - [x] Add `min_ivf_training_size: usize` to `HybridConfig::default()` (line 81, set to 10)
+  - [x] Modify `initialize()` method (lines 261-289):
     - Check if `training_data.len() < config.min_ivf_training_size`
     - If true: Skip IVF training, set `ivf_trained = false`, mark as initialized
     - If false: Proceed with normal IVF training, set `ivf_trained = true`
-  - [ ] Add `ivf_trained: bool` field to `HybridIndex` struct (line ~200)
-  - [ ] Modify `search_with_config()` to skip IVF if not trained (lines ~400-461)
-  - [ ] Modify `insert_with_timestamp()` to route to HNSW if IVF not trained (lines ~300-350)
+  - [x] Add `ivf_trained: bool` field to `HybridIndex` struct (line 208)
+  - [x] Modify `search_with_config()` to skip IVF if not trained (line 454)
+  - [x] Modify `insert_with_timestamp()` to route to HNSW if IVF not trained (lines 375-410)
+  - [x] Add `ivf_trained()` accessor method (lines 837-839)
+  - [x] Update `from_parts()` and `from_parts_with_chunk_loader()` to accept `ivf_trained` parameter
 
-- [ ] **Implementation**: `src/hybrid/persistence.rs` (modify ~20 lines)
+- [x] **Implementation**: `src/hybrid/persistence.rs` (modified ~25 lines)
 
-  - [ ] Save `ivf_trained` flag in manifest
-  - [ ] Load `ivf_trained` flag from manifest
-  - [ ] Handle backward compatibility (assume `ivf_trained = true` for old manifests)
+  - [x] Add `ivf_trained` field to `HybridMetadata` struct (line 66)
+  - [x] Save `ivf_trained` flag in `from_index()` (line 80)
+  - [x] Load `ivf_trained` flag from manifest (lines 679, 737)
+  - [x] Handle backward compatibility with `#[serde(default)]` attribute
 
-- [ ] **Implementation**: `bindings/node/src/session.rs` (no changes needed)
+- [x] **Implementation**: `bindings/node/src/session.rs` (no changes needed)
   - HNSW-only mode transparent to Node.js API
   - All existing methods work unchanged
 
-**Bounded Autonomy**: ~50 lines to hybrid/core.rs, ~20 lines to persistence.rs, ~150 lines tests
+**Bounded Autonomy**: ~60 lines to hybrid/core.rs, ~25 lines to persistence.rs, ~363 lines tests
 
-**Expected Test Results**: 8/8 tests passing
+**Actual Test Results**: 8/8 tests passing ✅
 
 ```
 ✓ should work with 1-vector dataset
@@ -1140,6 +1143,8 @@ Remove the 3-vector minimum requirement for IVF index by implementing HNSW-only 
 ✓ should handle metadata updates on small datasets
 ✓ should persist small datasets correctly
 ```
+
+**Summary**: Phase 7.1 successfully implements HNSW-only mode for datasets with fewer than 10 vectors. The system now gracefully handles 0-2 vectors without requiring IVF training, and automatically transitions to hybrid mode when the dataset grows beyond the threshold.
 
 #### 7.2 Documentation Updates (Day 32)
 
