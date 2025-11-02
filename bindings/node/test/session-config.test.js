@@ -37,7 +37,7 @@ describe('Session Configuration', () => {
       try {
         assert.ok(session, 'Session should be created');
 
-        // Session should work with default encryption (need at least 3 vectors for IVF)
+        // Session should work with default encryption
         const vectors = [
           { id: 'test-1', vector: Array(128).fill(0).map((_, i) => Math.sin(i) * 0.5), metadata: { test: 'encryption-default' }},
           { id: 'test-2', vector: Array(128).fill(0).map((_, i) => Math.cos(i) * 0.5), metadata: { test: 'encryption-default' }},
@@ -67,7 +67,6 @@ describe('Session Configuration', () => {
       try {
         assert.ok(session, 'Session should be created');
 
-        // Need at least 3 vectors for IVF training
         const vectors = [
           { id: 'test-encrypted-1', vector: Array(128).fill(0).map((_, i) => Math.cos(i) * 0.5), metadata: { encrypted: true }},
           { id: 'test-encrypted-2', vector: Array(128).fill(0).map((_, i) => Math.sin(i) * 0.5), metadata: { encrypted: true }},
@@ -96,7 +95,6 @@ describe('Session Configuration', () => {
       try {
         assert.ok(session, 'Session should be created with encryption disabled');
 
-        // Need at least 3 vectors for IVF training
         const vectors = [
           { id: 'test-unencrypted-1', vector: Array(128).fill(0).map((_, i) => Math.sin(i + 1) * 0.5), metadata: { encrypted: false }},
           { id: 'test-unencrypted-2', vector: Array(128).fill(0).map((_, i) => Math.cos(i + 1) * 0.5), metadata: { encrypted: false }},
@@ -159,7 +157,6 @@ describe('Session Configuration', () => {
       try {
         assert.ok(session, 'Session should be created with custom cache size');
 
-        // Need at least 3 vectors for IVF training
         const vectors = [
           { id: 'cache-test-1', vector: Array(128).fill(0).map((_, i) => Math.tan(i) * 0.5), metadata: { cacheTest: true }},
           { id: 'cache-test-2', vector: Array(128).fill(0).map((_, i) => Math.sin(i) * 0.5), metadata: { cacheTest: true }},

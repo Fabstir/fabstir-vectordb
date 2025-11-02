@@ -583,7 +583,7 @@ await session.addVectors([
 - Vectors are added to the hybrid in-memory index (HNSW + IVF)
 - Call `saveToS5()` to persist changes to decentralized storage
 - All vectors must have same dimensionality
-- Minimum 3 vectors required for IVF index initialization
+- System automatically uses HNSW-only mode for small datasets (< 10 vectors), no minimum required
 
 ---
 

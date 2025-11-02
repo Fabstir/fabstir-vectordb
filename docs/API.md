@@ -1493,9 +1493,18 @@ try {
 
 ```typescript
 // Error: NotInitialized: Index not trained
-// Solution: Initialize the index with training data
-const trainingVectors = await loadTrainingData();
-await client.admin.initializeIndex(trainingVectors);
+// Solution: Add vectors to the index
+// The system automatically handles small datasets (< 10 vectors) using HNSW-only mode
+// and transitions to hybrid mode (HNSW + IVF) when dataset grows
+
+await session.addVectors([
+  { id: 'doc1', vector: [...], metadata: { ... } },
+  // Add your vectors - works with any dataset size (0+)
+]);
+
+// Note: No manual initialization needed!
+// - Small datasets (< 10 vectors): Automatic HNSW-only mode
+// - Larger datasets (≥ 10 vectors): Automatic hybrid mode with IVF training
 ```
 
 #### 5. S5 Connection Issues

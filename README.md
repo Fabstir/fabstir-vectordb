@@ -14,6 +14,7 @@ A high-performance, decentralized vector database built on S5 storage with hybri
 - 🔧 **Multiple Interfaces**: REST API (port 7533) + Node.js native bindings
 - ✏️ **Full CRUD Operations (v0.2.0)**: Delete vectors by ID or metadata, update metadata, filtered search
 - 🔍 **Metadata Filtering (v0.2.0)**: MongoDB-style query language with 8 operators
+- 📊 **Works with Any Dataset Size**: Automatic HNSW-only mode for small datasets (0-9 vectors), seamless transition to hybrid mode
 - 🐳 **Docker Ready**: Production and development containers
 
 ## Performance (v0.2.0 - Latest)

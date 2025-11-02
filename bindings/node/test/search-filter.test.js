@@ -33,7 +33,7 @@ function generateTestVector(seed = 0) {
   return vector;
 }
 
-// Helper to add training vectors (IVF requires at least 10)
+// Helper to add background test vectors for realistic search scenarios
 async function addTrainingVectors(session, count = 10, startSeed = 1000) {
   const vectors = [];
   for (let i = 0; i < count; i++) {
