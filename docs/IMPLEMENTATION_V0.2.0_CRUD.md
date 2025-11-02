@@ -69,6 +69,9 @@ session-123/
 - ✅ Phase 6: Optional Polish (100%) **COMPLETE**
   - ✅ Phase 6.1: Schema Validation (100%) **COMPLETE**
   - ✅ Phase 6.2: Vacuum API (100%) **COMPLETE**
+- ⏳ Phase 7: IVF Minimum Vector Requirement Fix (0%)
+  - [ ] Phase 7.1: HNSW-Only Mode for Small Datasets (0%)
+  - [ ] Phase 7.2: Documentation Updates (0%)
 
 ## Implementation Phases
 
@@ -1076,6 +1079,105 @@ const vacStats = await session.vacuum();
 
 ---
 
+### Phase 7: IVF Minimum Vector Requirement Fix (Days 31-32)
+
+Remove the 3-vector minimum requirement for IVF index by implementing HNSW-only mode for small datasets.
+
+**Current Issue**: HybridIndex requires at least 3 vectors before allowing search due to IVF k-means training requiring `n_vectors >= n_clusters` (default: 3 clusters).
+
+**Root Cause**:
+- `src/hybrid/core.rs:72` - `ivf_config.n_clusters = 3`
+- `src/ivf/core.rs:249` - Validates `training_data.len() >= n_clusters`
+- K-means clustering cannot create 3 centroids from <3 data points
+
+#### 7.1 HNSW-Only Mode for Small Datasets (Day 31)
+
+**TDD Approach**: Write tests for small dataset scenarios
+
+- [ ] **Test File**: `bindings/node/test/small-dataset.test.js` (create, ~150 lines)
+
+  - [ ] Test 1-vector dataset (add + search)
+  - [ ] Test 2-vector dataset (add + search)
+  - [ ] Test search with 0 vectors (empty index)
+  - [ ] Test gradual dataset growth (1 → 10 → 100 vectors)
+  - [ ] Test auto-training when threshold reached
+  - [ ] Test delete operations on small datasets
+  - [ ] Test metadata updates on small datasets
+  - [ ] Test save/load with small datasets
+
+- [ ] **Implementation**: `src/hybrid/core.rs` (modify ~50 lines)
+
+  - [ ] Add `min_ivf_training_size: usize` to `HybridConfig::default()` (set to 10)
+  - [ ] Modify `initialize()` method (lines ~257-276):
+    - Check if `training_data.len() < config.min_ivf_training_size`
+    - If true: Skip IVF training, set `ivf_trained = false`, mark as initialized
+    - If false: Proceed with normal IVF training, set `ivf_trained = true`
+  - [ ] Add `ivf_trained: bool` field to `HybridIndex` struct (line ~200)
+  - [ ] Modify `search_with_config()` to skip IVF if not trained (lines ~400-461)
+  - [ ] Modify `insert_with_timestamp()` to route to HNSW if IVF not trained (lines ~300-350)
+
+- [ ] **Implementation**: `src/hybrid/persistence.rs` (modify ~20 lines)
+
+  - [ ] Save `ivf_trained` flag in manifest
+  - [ ] Load `ivf_trained` flag from manifest
+  - [ ] Handle backward compatibility (assume `ivf_trained = true` for old manifests)
+
+- [ ] **Implementation**: `bindings/node/src/session.rs` (no changes needed)
+  - HNSW-only mode transparent to Node.js API
+  - All existing methods work unchanged
+
+**Bounded Autonomy**: ~50 lines to hybrid/core.rs, ~20 lines to persistence.rs, ~150 lines tests
+
+**Expected Test Results**: 8/8 tests passing
+
+```
+✓ should work with 1-vector dataset
+✓ should work with 2-vector dataset
+✓ should work with empty index (0 vectors)
+✓ should handle gradual growth (1 → 10 → 100)
+✓ should auto-train IVF when threshold reached
+✓ should handle delete on small datasets
+✓ should handle metadata updates on small datasets
+✓ should persist small datasets correctly
+```
+
+#### 7.2 Documentation Updates (Day 32)
+
+**Documentation updates for Phase 7**
+
+- [ ] **Modify**: `docs/API.md` (~20 lines)
+
+  - [ ] Remove "minimum 3 vectors" requirement from Node.js examples
+  - [ ] Add note about HNSW-only mode for small datasets
+  - [ ] Update performance characteristics section
+
+- [ ] **Modify**: `CLAUDE.md` (~15 lines)
+
+  - [ ] Update "Performance Targets" section
+  - [ ] Remove IVF minimum vector requirement
+  - [ ] Add note about automatic mode switching
+
+- [ ] **Modify**: `README.md` (~10 lines)
+
+  - [ ] Update feature list (works with any dataset size)
+  - [ ] Update quick start examples (remove training vector workarounds)
+
+- [ ] **Modify**: `bindings/node/test/session-config.test.js` (~5 lines)
+
+  - [ ] Remove workaround requiring 3+ vectors
+  - [ ] Simplify test setup
+
+- [ ] **Modify**: `bindings/node/test/search-filter.test.js` (~10 lines)
+
+  - [ ] Remove `addTrainingVectors()` helper
+  - [ ] Simplify test vector setup
+
+**Bounded Autonomy**: ~60 lines total across documentation files
+
+**Status**: Phase 7.2 marks completion of IVF minimum vector requirement fix
+
+---
+
 ## Success Criteria
 
 **Functional Requirements (MVP - Must Have)**: ✅ **ALL COMPLETE**
@@ -1186,15 +1288,16 @@ const vacStats = await session.vacuum();
 - Scales with vector count and number of chunks
 - **Recommendation**: Call `vacuum()` before `saveToS5()` to reduce manifest size and optimize storage
 
-**Overall Status**: ✅ **v0.2.0 CRUD IMPLEMENTATION COMPLETE**
+**Overall Status**: ⏳ **v0.2.0 CRUD IMPLEMENTATION - Phase 7 In Progress**
 
-All 6 phases complete:
+Completed phases (6/7):
 - ✅ Phase 1: IVF Soft Deletion
 - ✅ Phase 2: Node.js Deletion API
 - ✅ Phase 3: Metadata Updates
 - ✅ Phase 4: Metadata Filtering
 - ✅ Phase 5: Testing & Documentation
 - ✅ Phase 6: Optional Polish (Schema + Vacuum)
+- ⏳ Phase 7: IVF Minimum Vector Requirement Fix (In Progress)
 
 ---
 

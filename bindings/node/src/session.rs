@@ -224,7 +224,7 @@ impl VectorDBSession {
 
         let threshold = options.as_ref()
             .and_then(|o| o.threshold)
-            .unwrap_or(0.7) as f32; // Convert to f32 for comparison
+            .unwrap_or(0.0) as f32; // Default to 0.0 to allow all results (topK without threshold filtering)
 
         let include_vectors = options.as_ref()
             .and_then(|o| o.include_vectors)
