@@ -1,6 +1,6 @@
 {
   "name": "@fabstir/vector-db-native",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Native Node.js bindings for Fabstir Vector Database",
   "main": "index.js",
   "types": "index.d.ts",
